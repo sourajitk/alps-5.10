@@ -24,8 +24,6 @@
 #include "mtk_drm_fb.h"
 #include "mtk_drm_trace.h"
 #include "mtk_drm_drv.h"
-#include "mtk_disp_wdma.h"
-#include "platform/mtk_drm_6789.h"
 
 #define DISP_REG_WDMA_INTEN 0x0000
 #define INTEN_FLD_FME_CPL_INTEN REG_FLD_MSB_LSB(0, 0)
@@ -143,7 +141,8 @@
 #define MT6983_OVL_DUMMY_REG	(0x200UL)
 
 /* AID offset in mmsys config */
-#define MT6895_OVL_DUMMY_REG	(0x200UL)
+#define MT6895_WDMA0_AID_SEL	(0xB1CUL)
+#define MT6895_WDMA1_AID_SEL	(0xB20UL)
 
 #define MT6879_WDMA0_AID_SEL	(0xB1CUL)
 #define MT6879_WDMA1_AID_SEL	(0xB20UL)
@@ -189,6 +188,25 @@ enum GS_WDMA_FLD {
 	GS_WDMA_ISSUE_REG_TH_U,
 	GS_WDMA_ISSUE_REG_TH_V,
 	GS_WDMA_FLD_NUM,
+};
+
+struct mtk_disp_wdma_data {
+	/* golden setting */
+	unsigned int fifo_size_1plane;
+	unsigned int fifo_size_uv_1plane;
+	unsigned int fifo_size_2plane;
+	unsigned int fifo_size_uv_2plane;
+	unsigned int fifo_size_3plane;
+	unsigned int fifo_size_uv_3plane;
+
+	void (*sodi_config)(struct drm_device *drm, enum mtk_ddp_comp_id id,
+			    struct cmdq_pkt *handle, void *data);
+	unsigned int (*aid_sel)(struct mtk_ddp_comp *comp);
+	resource_size_t (*check_wdma_sec_reg)(struct mtk_ddp_comp *comp);
+	bool support_shadow;
+	bool need_bypass_shadow;
+	bool is_support_34bits;
+	bool use_larb_control_sec;
 };
 
 struct mtk_wdma_cfg_info {
@@ -303,19 +321,11 @@ resource_size_t mtk_wdma_check_sec_reg_MT6983(struct mtk_ddp_comp *comp)
 	}
 }
 
-resource_size_t mtk_wdma_check_sec_reg_MT6895(struct mtk_ddp_comp *comp)
+unsigned int mtk_wdma_aid_sel_MT6895(struct mtk_ddp_comp *comp)
 {
-	struct mtk_ddp_comp *comp_sec;
-	resource_size_t base;
-	struct mtk_drm_private *priv = comp->mtk_crtc->base.dev->dev_private;
-
 	switch (comp->id) {
-	case DDP_COMPONENT_WDMA0:
-		return 0;
 	case DDP_COMPONENT_WDMA1:
-		comp_sec = priv->ddp_comp[DDP_COMPONENT_OVL0_2L];
-		base = comp_sec->regs_pa;
-		return base + MT6895_OVL_DUMMY_REG;
+		return MT6895_WDMA1_AID_SEL;
 	default:
 		return 0;
 	}
@@ -1719,7 +1729,7 @@ static const struct mtk_disp_wdma_data mt6855_wdma_driver_data = {
 	.sodi_config = mt6853_mtk_sodi_config,
 	.support_shadow = false,
 	.need_bypass_shadow = true,
-	.is_support_34bits = true,
+	.is_support_34bits = false,
 };
 
 static const struct mtk_disp_wdma_data mt6983_wdma_driver_data = {
@@ -1745,11 +1755,11 @@ static const struct mtk_disp_wdma_data mt6895_wdma_driver_data = {
 	.fifo_size_3plane = 596,
 	.fifo_size_uv_3plane = 148,
 	.sodi_config = mt6895_mtk_sodi_config,
-	.check_wdma_sec_reg = &mtk_wdma_check_sec_reg_MT6895,
+	.aid_sel = &mtk_wdma_aid_sel_MT6895,
 	.support_shadow = false,
 	.need_bypass_shadow = true,
 	.is_support_34bits = true,
-	.use_larb_control_sec = true,
+	.use_larb_control_sec = false,
 };
 
 static const struct of_device_id mtk_disp_wdma_driver_dt_match[] = {
@@ -1765,8 +1775,6 @@ static const struct of_device_id mtk_disp_wdma_driver_dt_match[] = {
 	 .data = &mt6853_wdma_driver_data},
 	{.compatible = "mediatek,mt6833-disp-wdma",
 	 .data = &mt6833_wdma_driver_data},
-	{.compatible = "mediatek,mt6789-disp-wdma",
-	 .data = &mt6789_wdma_driver_data},
 	{.compatible = "mediatek,mt6879-disp-wdma",
 	 .data = &mt6879_wdma_driver_data},
 	{.compatible = "mediatek,mt6983-disp-wdma",

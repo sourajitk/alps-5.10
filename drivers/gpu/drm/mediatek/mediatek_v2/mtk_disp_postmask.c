@@ -22,8 +22,6 @@
 #include "mtk_dump.h"
 #include "mtk_drm_mmp.h"
 #include "mtk_drm_gem.h"
-#include "mtk_disp_postmask.h"
-#include "platform/mtk_drm_6789.h"
 
 #define POSTMASK_MASK_MAX_NUM 96
 #define POSTMASK_GRAD_MAX_NUM 192
@@ -114,6 +112,10 @@
 #define DISP_POSTMASK_GRAD_VAL(n) (DISP_POSTMASK_GRAD_VAL_0 + (0x4 * (n)))
 
 static irqreturn_t mtk_postmask_irq_handler(int irq, void *dev_id) __attribute__((unused));
+
+struct mtk_disp_postmask_data {
+	bool is_support_34bits;
+};
 
 struct mtk_disp_postmask {
 	struct mtk_ddp_comp ddp_comp;
@@ -631,7 +633,7 @@ static const struct mtk_disp_postmask_data mt6879_postmask_driver_data = {
 };
 
 static const struct mtk_disp_postmask_data mt6855_postmask_driver_data = {
-	.is_support_34bits = true,
+	.is_support_34bits = false,
 };
 
 static const struct of_device_id mtk_disp_postmask_driver_dt_match[] = {
@@ -649,8 +651,6 @@ static const struct of_device_id mtk_disp_postmask_driver_dt_match[] = {
 	  .data = &mt6853_postmask_driver_data},
 	{ .compatible = "mediatek,mt6833-disp-postmask",
 	  .data = &mt6833_postmask_driver_data},
-	{ .compatible = "mediatek,mt6789-disp-postmask",
-	  .data = &mt6789_postmask_driver_data},
 	{ .compatible = "mediatek,mt6879-disp-postmask",
 	  .data = &mt6879_postmask_driver_data},
 	{ .compatible = "mediatek,mt6855-disp-postmask",

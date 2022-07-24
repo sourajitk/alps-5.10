@@ -64,16 +64,14 @@ forward_to_driver(struct mtu3 *mtu, const struct usb_ctrlrequest *setup)
 __releases(mtu->lock)
 __acquires(mtu->lock)
 {
-	int ret = -EINVAL;
+	int ret;
 
 	if (!mtu->gadget_driver)
 		return -EOPNOTSUPP;
 
-	if (mtu->async_callbacks) {
-		spin_unlock(&mtu->lock);
-		ret = mtu->gadget_driver->setup(&mtu->g, setup);
-		spin_lock(&mtu->lock);
-	}
+	spin_unlock(&mtu->lock);
+	ret = mtu->gadget_driver->setup(&mtu->g, setup);
+	spin_lock(&mtu->lock);
 
 	dev_dbg(mtu->dev, "%s ret %d\n", __func__, ret);
 	return ret;
@@ -815,18 +813,30 @@ static int ep0_queue(struct mtu3_ep *mep, struct mtu3_request *mreq)
 		return -EINVAL;
 	}
 
+#ifdef OPLUS_FEATURE_CHG_BASIC
 	if (!list_empty(&mep->req_list))
 		return -EBUSY;
 
 	list_add_tail(&mreq->list, &mep->req_list);
+#endif
 
 	if (mtu->delayed_status) {
 
 		mtu->delayed_status = false;
 		ep0_do_status_stage(mtu);
+		/* needn't giveback the request for handling delay STATUS */
+#ifdef OPLUS_FEATURE_CHG_BASIC
 		ep0_req_giveback(mtu, &mreq->request);
+#endif
 		return 0;
 	}
+
+#ifndef OPLUS_FEATURE_CHG_BASIC
+	if (!list_empty(&mep->req_list))
+		return -EBUSY;
+
+	list_add_tail(&mreq->list, &mep->req_list);
+#endif
 
 	/* sequence #1, IN ... start writing the data */
 	if (mtu->ep0_state == MU3D_EP0_STATE_TX)

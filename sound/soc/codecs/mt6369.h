@@ -5125,6 +5125,8 @@ enum {
 enum {
 	/* common */
 	SUPPLY_SEQ_CLK_BUF,
+	SUPPLY_SEQ_LDO_VANT18,
+	SUPPLY_SEQ_LDO_VAUD28,
 	SUPPLY_SEQ_AUD_GLB,
 	SUPPLY_SEQ_DL_GPIO,
 	SUPPLY_SEQ_UL_GPIO,
@@ -5166,7 +5168,6 @@ enum {
 	SUPPLY_SEQ_AUD_VOW,
 	SUPPLY_SEQ_VOW_CLK,
 	SUPPLY_SEQ_VOW_LDO,
-	SUPPLY_SEQ_VOW_PLL,
 	SUPPLY_SEQ_AUD_GLB_VOW,
 	SUPPLY_SEQ_VOW_DIG_CFG,
 	SUPPLY_SEQ_VOW_PERIODIC_CFG,
@@ -5219,6 +5220,7 @@ enum {
 	DL_GAIN_0DB = 8,
 	DL_GAIN_N_1DB = 9,
 	DL_GAIN_N_10DB = 18,
+	DL_GAIN_N_22DB = 30,
 	DL_GAIN_N_40DB = 0x1f,
 };
 
@@ -5253,7 +5255,6 @@ enum {
 	HP_MUX_HP,
 	HP_MUX_TEST_MODE,
 	HP_MUX_HP_IMPEDANCE,
-	HP_MUX_HP_DUALSPK,
 	HP_MUX_MASK = 0x7,
 };
 
@@ -5410,7 +5411,6 @@ struct mt6369_priv {
 	int dev_counter[DEVICE_NUM];
 	int hp_gain_ctl;
 	int hp_hifi_mode;
-	bool apply_n12db_gain;
 	int hp_plugged;
 	int mtkaif_protocol;
 	int dmic_one_wire_mode;
@@ -5445,9 +5445,6 @@ struct mt6369_priv {
 	int vow_dmic_lp;
 	int vow_single_mic_select;
 	int hwcid0;
-
-	/* regulator */
-	struct regulator *reg_vant18;
 };
 
 #define MT_SOC_ENUM_EXT_ID(xname, xenum, xhandler_get, xhandler_put, id) \
@@ -5495,8 +5492,8 @@ struct mt6369_priv {
 #define HP_PGA_MINUS_40_DB_REG_VAL 0x3f
 
 /* dc trim */
-#define TRIM_TIMES 7
-#define TRIM_DISCARD_NUM 1
+#define TRIM_TIMES 26
+#define TRIM_DISCARD_NUM 3
 #define TRIM_USEFUL_NUM (TRIM_TIMES - (TRIM_DISCARD_NUM * 2))
 
 /* headphone impedance detection */

@@ -1363,6 +1363,7 @@ static int gt9896s_spi_remove(struct spi_device *spi)
 {
 	if (gt9896s_pdev) {
 		platform_device_unregister(gt9896s_pdev);
+		kfree(gt9896s_pdev);
 		gt9896s_pdev = NULL;
 	ts_info("GT9896S SPI remove");
 	}
@@ -1401,6 +1402,7 @@ void gt9896s_ts_dev_release(void)
 {
 	if (gt9896s_pdev) {
 		platform_device_unregister(gt9896s_pdev);
+		kfree(gt9896s_pdev);
 		gt9896s_pdev = NULL;
 	}
 	spi_unregister_driver(&gt9896s_spi_driver);

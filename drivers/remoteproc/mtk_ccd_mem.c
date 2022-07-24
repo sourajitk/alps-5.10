@@ -42,7 +42,7 @@ static struct mtk_ccd_buf *mtk_ccd_buf_alloc(
 					   struct device *dev, unsigned long size)
 {
 	struct mtk_ccd_buf *buf;
-	struct dma_heap *dma_heap;
+	struct dma_heap * dma_heap;
 
 	buf = kzalloc(sizeof(*buf), GFP_KERNEL);
 	if (!buf)
@@ -56,23 +56,23 @@ static struct mtk_ccd_buf *mtk_ccd_buf_alloc(
 
 	buf->dbuf = dma_heap_buffer_alloc(dma_heap, size,
 			O_RDWR | O_CLOEXEC, DMA_HEAP_VALID_HEAP_FLAGS);
-	if (IS_ERR(buf->dbuf)) {
+	if(IS_ERR(buf->dbuf)) {
 		pr_info("dma_heap buffer alloc fail\n");
 		return ERR_PTR(-ENOMEM);
 	}
 
 	buf->db_attach = dma_buf_attach(buf->dbuf, dev);
 	if (IS_ERR(buf->db_attach)) {
-		pr_info("dma_heap attach fail\n");
-		return ERR_PTR(-ENOMEM);
+	    pr_info("dma_heap attach fail\n");
+	    return ERR_PTR(-ENOMEM);
 	}
 
 	buf->dma_sgt = dma_buf_map_attachment(buf->db_attach,
 				DMA_BIDIRECTIONAL);
 	if (IS_ERR(buf->dma_sgt)) {
-		pr_info("dma_heap map failed\n");
-		dma_buf_detach(buf->dbuf, buf->db_attach);
-		return ERR_PTR(-ENOMEM);
+	    pr_info("dma_heap map failed\n");
+	    dma_buf_detach(buf->dbuf, buf->db_attach);
+	    return ERR_PTR(-ENOMEM);
 	}
 
 	buf->vaddr = dma_buf_vmap(buf->dbuf);

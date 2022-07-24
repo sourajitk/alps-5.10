@@ -1277,8 +1277,13 @@ void enable_meta_vcom(int mode)
 
 	if (mode == 1) {
 		strncpy(serial_str, "", sizeof(serial_str) - 1);
+#ifndef OPLUS_FEATURE_CHG_BASIC
 		device_desc.idVendor = 0x0e8d;
 		device_desc.idProduct = 0x2007;
+#else
+		device_desc.idVendor = 0x22D9;
+		device_desc.idProduct = 0x0006;
+#endif
 		device_desc.bDeviceClass = 0x02;
 
 		/*ttyGS0*/
@@ -1289,8 +1294,13 @@ void enable_meta_vcom(int mode)
 
 
 		strncpy(serial_str, "", sizeof(serial_str) - 1);
+#ifndef OPLUS_FEATURE_CHG_BASIC
 		device_desc.idVendor = 0x0e8d;
 		device_desc.idProduct = 0x202d;
+#else
+		device_desc.idVendor = 0x22d9;
+		device_desc.idProduct = 0x202d;
+#endif
 
 		/*ttyGS0 + ttyGS3*/
 		quick_vcom_num = (1 << 0) + (1 << 3);
@@ -1412,11 +1422,6 @@ static int usb_meta_probe(struct platform_device *pdev)
 		pr_info("%s: cannot get 'udc' node from dt.", __func__);
 		err = -EINVAL;
 		goto err_probe;
-	}
-
-	if (meta_udc_name[0] == 'm') {
-		sprintf(meta_udc_name, "musb-hdrc");
-		pr_info("%s Rename udc name to musb-hdrc.\n", __func__);
 	}
 
 	android_usb_driver.gadget_driver.udc_name = meta_udc_name;

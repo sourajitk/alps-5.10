@@ -11,6 +11,9 @@
 #if IS_ENABLED(CONFIG_MTK_THERMAL_INTERFACE)
 #include <thermal_interface.h>
 #endif
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_GKI_CPUFREQ_BOUNCING)
+#include <linux/cpufreq_bouncing.h>
+#endif
 
 MODULE_LICENSE("GPL");
 
@@ -170,7 +173,7 @@ int sort_thermal_headroom(struct cpumask *cpus, int *cpu_order)
 	}
 
 	spin_lock(&thermal_headroom_lock);
-	for_each_cpu_and(cpu, cpus, cpu_active_mask) {
+	for_each_cpu_and(cpu, cpus, cpu_online_mask) {
 		int headroom;
 
 		headroom = thermal_headroom[cpu];
@@ -491,8 +494,6 @@ void check_for_migration(struct task_struct *p)
 			return;
 
 		pd = em_cpu_get(cpu);
-		if (!pd)
-			return;
 		thre_idx = (pd->nr_perf_states >> 3) - 1;
 		if (thre_idx >= 0)
 			thre = pd->table[thre_idx].frequency;
@@ -544,6 +545,14 @@ void check_for_migration(struct task_struct *p)
 
 void hook_scheduler_tick(void *data, struct rq *rq)
 {
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_GKI_CPUFREQ_BOUNCING)
+	int this_cpu = cpu_of(rq);
+	struct cpufreq_policy *pol = cpufreq_cpu_get_raw(this_cpu);
+
+	if (pol)
+		cb_update(pol, ktime_get_ns());
+#endif
+
 	if (rq->curr->policy == SCHED_NORMAL)
 		check_for_migration(rq->curr);
 }

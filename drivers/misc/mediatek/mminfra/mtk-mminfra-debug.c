@@ -143,20 +143,28 @@ static void mminfra_cg_check(bool on)
 
 	if (on) {
 		/* SMI CG still off */
-		if ((con0_val & (SMI_CG_BIT)) || (con0_val & GCEM_CG_BIT) ||
-			(con0_val & GCED_CG_BIT) || (con1_val & GCE26M_CG_BIT)) {
-			pr_notice("%s cg still off, CG_CON0:0x%x CG_CON1:0x%x\n",
-						__func__, con0_val, con1_val);
+		if ((con0_val & (SMI_CG_BIT))) {
+			pr_notice("%s SMI cg still off, CG_CON0:0x%x\n", __func__, con0_val);
 			mtk_smi_dbg_cg_status();
+		}
+		/* GCE CG still off */
+		if ((con0_val & GCEM_CG_BIT) || (con0_val & GCED_CG_BIT)
+			|| (con1_val & GCE26M_CG_BIT)) {
+			pr_notice("%s GCE cg still off, CG_CON0:0x%x CG_CON1:0x%x\n",
+				__func__, con0_val, con1_val);
 			cmdq_dump_usage();
 		}
 	} else {
 		/* SMI CG still on */
-		if (!(con0_val & (SMI_CG_BIT)) || !(con0_val & GCEM_CG_BIT)
-			|| !(con0_val & GCED_CG_BIT) || !(con1_val & GCE26M_CG_BIT)) {
-			pr_notice("%s Scg still on, CG_CON0:0x%x CG_CON1:0x%x\n",
-						__func__, con0_val, con1_val);
+		if (!(con0_val & (SMI_CG_BIT))) {
+			pr_notice("%s SMI cg still on, CG_CON0:0x%x\n", __func__, con0_val);
 			mtk_smi_dbg_cg_status();
+		}
+		/* GCE CG still on */
+		if (!(con0_val & GCEM_CG_BIT) || !(con0_val & GCED_CG_BIT)
+			|| !(con1_val & GCE26M_CG_BIT)) {
+			pr_notice("%s GCE cg still on, CG_CON0:0x%x CG_CON1:0x%x\n",
+				__func__, con0_val, con1_val);
 			cmdq_dump_usage();
 		}
 	}
@@ -455,16 +463,6 @@ static int mminfra_debug_probe(struct platform_device *pdev)
 	return ret;
 }
 
-static int mminfra_pm_suspend(struct device *dev)
-{
-	mtk_smi_dbg_cg_status();
-	return 0;
-}
-
-static const struct dev_pm_ops mminfra_debug_pm_ops = {
-	.suspend = mminfra_pm_suspend,
-};
-
 static const struct of_device_id of_mminfra_debug_match_tbl[] = {
 	{
 		.compatible = "mediatek,mminfra-debug",
@@ -477,7 +475,6 @@ static struct platform_driver mminfra_debug_drv = {
 	.driver = {
 		.name = "mtk-mminfra-debug",
 		.of_match_table = of_mminfra_debug_match_tbl,
-		.pm = &mminfra_debug_pm_ops,
 	},
 };
 

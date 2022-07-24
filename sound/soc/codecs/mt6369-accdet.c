@@ -89,9 +89,9 @@ struct mt6369_accdet_data {
 	/* when caps include ACCDET_AP_GPIO_EINT */
 	struct pinctrl *pinctrl;
 	struct pinctrl_state *pins_eint;
-	int gpiopin;
+	u32 gpiopin;
 	u32 gpio_hp_deb;
-	int gpioirq;
+	u32 gpioirq;
 	u32 accdet_eint_type;
 	/* when MICBIAS_DISABLE_TIMER timeout, queue work: dis_micbias_work */
 	struct work_struct delay_init_work;
@@ -162,6 +162,7 @@ static u32 button_press_debounce_01 = 0x800;
 static void accdet_init_once(void);
 static inline void accdet_init(void);
 static void accdet_init_debounce(void);
+static void accdet_modify_vref_volt_self(void);
 static u32 adjust_eint_analog_setting(void);
 static u32 adjust_moisture_analog_setting(u32 eintID);
 static u32 adjust_moisture_setting(u32 moistureID, u32 eintID);
@@ -367,14 +368,14 @@ static void cat_register(char *buf)
 	strncat(buf, accdet_log_buf, strlen(accdet_log_buf));
 	st_addr = ACCDET_AUXADC_SEL_ADDR;
 	end_addr = ACCDET_MON_FLAG_EN_ADDR;
-	for (addr = st_addr; addr <= end_addr; addr += 4) {
+	for (addr = st_addr; addr <= end_addr; addr += 8) {
 		idx = addr;
 		ret = sprintf(accdet_log_buf,
 			"(0x%x)=0x%x (0x%x)=0x%x (0x%x)=0x%x (0x%x)=0x%x\n",
 			idx, accdet_read(idx),
-			idx+1, accdet_read(idx+1),
 			idx+2, accdet_read(idx+2),
-			idx+3, accdet_read(idx+3));
+			idx+4, accdet_read(idx+4),
+			idx+6, accdet_read(idx+6));
 		if (ret < 0)
 			pr_notice("sprintf failed\n");
 		strncat(buf, accdet_log_buf, strlen(accdet_log_buf));
@@ -384,15 +385,15 @@ static void cat_register(char *buf)
 		pr_notice("sprintf failed\n");
 	strncat(buf, accdet_log_buf, strlen(accdet_log_buf));
 	st_addr = RG_AUDPREAMPLON_ADDR;
-	end_addr = MT6369_AUDENC_ANA_CON32;
-	for (addr = st_addr; addr <= end_addr; addr += 4) {
+	end_addr = RG_CLKSQ_EN_ADDR;
+	for (addr = st_addr; addr <= end_addr; addr += 8) {
 		idx = addr;
 		ret = sprintf(accdet_log_buf,
 			"(0x%x)=0x%x (0x%x)=0x%x (0x%x)=0x%x (0x%x)=0x%x\n",
 			idx, accdet_read(idx),
-			idx+1, accdet_read(idx+1),
 			idx+2, accdet_read(idx+2),
-			idx+3, accdet_read(idx+3));
+			idx+4, accdet_read(idx+4),
+			idx+6, accdet_read(idx+6));
 		if (ret < 0)
 			pr_notice("sprintf failed\n");
 		strncat(buf, accdet_log_buf, strlen(accdet_log_buf));
@@ -714,12 +715,14 @@ static void accdet_get_efuse(void)
 	unsigned short efuseval = 0;
 	int ret = 0;
 	int tmp_div;
+	unsigned int moisture_eint0;
+	unsigned int moisture_eint1;
 
 	/* accdet offset efuse:
 	 * this efuse must divided by 2
 	 */
-	ret = nvmem_device_read(accdet->accdet_efuse, 67*2, 2, &efuseval);
-	accdet->auxadc_offset = (int)((efuseval >> 8) & 0xFF);
+	ret = nvmem_device_read(accdet->accdet_efuse, 91*2, 2, &efuseval);
+	accdet->auxadc_offset = efuseval & 0xFF;
 	if (accdet->auxadc_offset > 128)
 		accdet->auxadc_offset -= 256;
 	accdet->auxadc_offset = (accdet->auxadc_offset >> 1);
@@ -727,17 +730,17 @@ static void accdet_get_efuse(void)
  * we need to transfer it
  */
 	/* moisture vdd efuse offset */
-	ret = nvmem_device_read(accdet->accdet_efuse, 71*2, 2, &efuseval);
+	ret = nvmem_device_read(accdet->accdet_efuse, 94*2, 2, &efuseval);
 	accdet->moisture_vdd_offset =
-		(int)(efuseval & ACCDET_CALI_MASK0);
+		(int)((efuseval >> 8) & ACCDET_CALI_MASK0);
 	if (accdet->moisture_vdd_offset > 128)
 		accdet->moisture_vdd_offset -= 256;
 	pr_info("%s moisture_vdd efuse=0x%x, moisture_vdd_offset=%d mv\n",
 		__func__, efuseval, accdet->moisture_vdd_offset);
 
 	/* moisture offset */
-	ret = nvmem_device_read(accdet->accdet_efuse, 71*2, 2, &efuseval);
-	accdet->moisture_offset = (int)((efuseval >> 8) & ACCDET_CALI_MASK0);
+	ret = nvmem_device_read(accdet->accdet_efuse, 95*2, 2, &efuseval);
+	accdet->moisture_offset = (int)(efuseval & ACCDET_CALI_MASK0);
 	if (accdet->moisture_offset > 128)
 		accdet->moisture_offset -= 256;
 	pr_info("%s moisture_efuse efuse=0x%x,moisture_offset=%d mv\n",
@@ -746,12 +749,20 @@ static void accdet_get_efuse(void)
 	if (accdet_dts.moisture_use_ext_res == 0x0) {
 		/* moisture eint efuse offset */
 		ret = nvmem_device_read(accdet->accdet_efuse,
-				70*2, 2, &efuseval);
-		accdet->moisture_eint_offset = (int)(efuseval);
-		pr_info("%s moisture_eint0/1 efuse=0x%x\n",
-			__func__, efuseval);
+				93*2, 2, &efuseval);
+		moisture_eint0 =
+			(int)((efuseval >> 8) & ACCDET_CALI_MASK0);
+		pr_info("%s moisture_eint0 efuse=0x%x,moisture_eint0=0x%x\n",
+			__func__, efuseval, moisture_eint0);
 
+		ret = nvmem_device_read(accdet->accdet_efuse,
+				94*2, 2, &efuseval);
+		moisture_eint1 = (int)(efuseval & ACCDET_CALI_MASK0);
+		pr_info("%s moisture_eint1 efuse=0x%x,moisture_eint1=0x%x\n",
+			__func__, efuseval, moisture_eint1);
 
+		accdet->moisture_eint_offset =
+			(moisture_eint1 << 8) | moisture_eint0;
 		if (accdet->moisture_eint_offset > 32768)
 			accdet->moisture_eint_offset -= 65536;
 		pr_info("%s moisture_eint_offset=%d ohm\n", __func__,
@@ -795,16 +806,15 @@ static void accdet_get_efuse_4key(void)
 	 * BC efuse: key-B Voltage:DB--BC;
 	 * key-C Voltage: BC--600;
 	 */
-	ret = nvmem_device_read(accdet->accdet_efuse, 68*2, 2, &tmp_val);
-	tmp_8bit = (tmp_val >> 8) & ACCDET_CALI_MASK0;
+	ret = nvmem_device_read(accdet->accdet_efuse, 92*2, 2, &tmp_val);
+	tmp_8bit = tmp_val & ACCDET_CALI_MASK0;
 	accdet_dts.four_key.mid = tmp_8bit << 2;
 
-	ret = nvmem_device_read(accdet->accdet_efuse, 69*2, 2, &tmp_val);
-	tmp_8bit = tmp_val & ACCDET_CALI_MASK0;
+	tmp_8bit = (tmp_val >> 8) & ACCDET_CALI_MASK0;
 	accdet_dts.four_key.voice = tmp_8bit << 2;
 
-	tmp_8bit = (tmp_val >> 8) & ACCDET_CALI_MASK0;
-
+	ret = nvmem_device_read(accdet->accdet_efuse, 93*2, 2, &tmp_val);
+	tmp_8bit = tmp_val & ACCDET_CALI_MASK0;
 	accdet_dts.four_key.up = tmp_8bit << 2;
 
 	accdet_dts.four_key.down = 600;
@@ -1195,19 +1205,13 @@ static u32 adjust_moisture_digital_setting(u32 eintID)
 			accdet_update_bit(ACCDET_EINT1_M_SW_EN_ADDR,
 				ACCDET_EINT1_M_SW_EN_SFT);
 		}
-	} else if (accdet_dts.moisture_detect_mode == 0x5) {
-		/* follow mt6338 moisture */
-		accdet_update_bit(ACCDET_EINT0_CMPMEN_SW_ADDR,
-			ACCDET_EINT0_CMPMEN_SW_SFT);
-		pr_info("%s [M_Check_Flow] (0x%x)=0x%x\n", __func__,
-			ACCDET_EINT0_CMPMEN_SW_ADDR,
-			accdet_read(ACCDET_EINT0_CMPMEN_SW_ADDR));
 	}
 	return 0;
 }
 
 static u32 adjust_moisture_analog_setting(u32 eintID)
 {
+	unsigned int efuseval = 0, vref2val = 0, vref2hi = 0;
 
 	if (accdet_dts.moisture_detect_mode == 0x1) {
 		/* select VTH to 2.8v(default), can set to 2.4 or 2.0v by dts */
@@ -1233,6 +1237,34 @@ static u32 adjust_moisture_analog_setting(u32 eintID)
 	} else if (accdet_dts.moisture_detect_mode == 0x4) {
 		/* do nothing */
 	} else if (accdet_dts.moisture_detect_mode == 0x5) {
+		/* enable VREF2 */
+		vref2hi = 0x1;
+		switch (accdet_dts.moisture_comp_vref2) {
+		case 0:
+			vref2val = 0x3;
+			break;
+		case 1:
+			vref2val = 0x7;
+			break;
+		case 2:
+			vref2val = 0xc;
+			break;
+		default:
+			vref2val = 0x3;
+			break;
+		}
+		pr_info("%s efuse=0x%x,vref2val=0x%x, vref2hi=0x%x\n",
+			__func__, efuseval, vref2val, vref2hi);
+		/* voltage 880~1330mV */
+		accdet_update_bit(RG_ACCDETSPARE_H_ADDR, 7);
+		accdet_update_bits(RG_EINTCOMPVTH_ADDR,
+			6, 0x3, (vref2val & 0xc) >> 2);
+		accdet_update_bits(RG_ACCDETSPARE_H_ADDR,
+			5, 0x3, (vref2val & 0x3));
+		/* golden setting
+		 * accdet_update_bits(RG_ACCDETSPARE_ADDR,
+		 * 3, 0x1f, 0x1e);
+		 */
 	}
 	return 0;
 }
@@ -1287,18 +1319,7 @@ static u32 adjust_moisture_setting(u32 moistureID, u32 eintID)
 		}
 		return M_NO_ACT;
 	} else if (moistureID == M_WATER_IN) {
-		/* follow mt6338 moisture */
-		pr_info("[M_Check_Flow] IN.3 cur_eint:%d\n", accdet->cur_eint_state);
-		/* water in then HP in the HP out, set PLUG_IN state */
-		if (accdet->cur_eint_state == EINT_PLUG_OUT) {
-			pr_info("[M_Check_Flow] IN.4 cur_eint:%d\n", accdet->cur_eint_state);
-			accdet->cur_eint_state = EINT_MOISTURE_DETECTED;
-		} else {
-			pr_info("[M_Check_Flow] OUT.1 cur_eint:%d\n", accdet->cur_eint_state);
-			/* set debounce to 1ms for w in h in h out recover */
-			accdet_set_debounce(eint_state000,
-				accdet_dts.pwm_deb.eint_debounce0);
-		}
+		accdet->cur_eint_state = EINT_MOISTURE_DETECTED;
 		if (accdet_dts.moisture_detect_mode == 0x5) {
 			/* Case 5: water in need 128ms to detect plug out
 			 * set debounce to 128ms
@@ -1315,19 +1336,28 @@ static u32 adjust_moisture_setting(u32 moistureID, u32 eintID)
 		}
 		clear_accdet_eint(eintID);
 		clear_accdet_eint_check(eintID);
-		if (accdet->cur_eint_state == EINT_MOISTURE_DETECTED) {
-			pr_info("[M_Check_Flow] IN.6 cur_eint:%d\n", accdet->cur_eint_state);
-			return M_NO_ACT;
-		}
+		return M_NO_ACT;
 	} else if (moistureID == M_HP_PLUG_IN) {
-		pr_info("[M_Check_Flow] IN.7 cur_eint:%d (0x%x)=0x%x\n",
-			accdet->cur_eint_state,
-			ACCDET_EINT0_CMPMEN_SW_ADDR,
-			accdet_read(ACCDET_EINT0_CMPMEN_SW_ADDR));
 		/* water in then HP in, recover state */
 		if (accdet->cur_eint_state == EINT_MOISTURE_DETECTED)
 			accdet->cur_eint_state = EINT_PLUG_OUT;
 
+		if (HAS_CAP(accdet->data->caps, ACCDET_PMIC_EINT0)) {
+			/* wk1, disable moisture detection */
+			accdet_clear_bit(ACCDET_EINT0_M_SW_EN_ADDR,
+				ACCDET_EINT0_M_SW_EN_SFT);
+		} else if (HAS_CAP(accdet->data->caps, ACCDET_PMIC_EINT1)) {
+			/* wk1, disable moisture detection */
+			accdet_clear_bit(ACCDET_EINT1_M_SW_EN_ADDR,
+			ACCDET_EINT1_M_SW_EN_SFT);
+		} else if (HAS_CAP(accdet->data->caps,
+				ACCDET_PMIC_BI_EINT)) {
+			/* wk1, disable moisture detection */
+			accdet_clear_bit(ACCDET_EINT0_M_SW_EN_ADDR,
+				ACCDET_EINT0_M_SW_EN_SFT);
+			accdet_clear_bit(ACCDET_EINT1_M_SW_EN_ADDR,
+				ACCDET_EINT1_M_SW_EN_SFT);
+		}
 		/* wk3, if HP + W together, after detect HP, we should
 		 * set accdet_sync_flag to true to avoid receive W interrupt
 		 */
@@ -1471,11 +1501,16 @@ static void recover_moisture_analog_setting(void)
 	} else if (accdet_dts.moisture_detect_mode == 0x3) {
 	} else if (accdet_dts.moisture_detect_mode == 0x4) {
 	} else if (accdet_dts.moisture_detect_mode == 0x5) {
+		/* enable comp1 delay window */
+		accdet_clear_bit(RG_EINT0NOHYS_ADDR,
+			RG_EINT0NOHYS_SFT);
+
 		accdet_set_debounce(eint_state011,
 			accdet_dts.pwm_deb.eint_debounce3);
-		pr_info("%s [M_Check_Flow] done\n", __func__);
-		accdet_clear_bit(ACCDET_EINT0_CMPMEN_SW_ADDR,
-			ACCDET_EINT0_CMPMEN_SW_SFT);
+		/* disconnect VREF2 to EINT0CMP and recover to vref */
+		accdet_update_bits(RG_EINTCOMPVTH_ADDR,
+			RG_EINTCOMPVTH_SFT, RG_EINTCOMPVTH_MASK,
+			accdet_dts.moisture_comp_vth);
 	}
 }
 
@@ -1582,26 +1617,24 @@ static void dis_micbias_work_callback(struct work_struct *work)
 {
 	u32 cur_AB = 0, eintID = 0;
 
-	if (HAS_CAP(accdet->data->caps, ACCDET_PMIC_EINT_IRQ)) {
-		/* check EINT0 status, if plug out,
-		 * not need to disable accdet here
-		 */
-		eintID = accdet_read_bits(ACCDET_EINT0_MEM_IN_ADDR,
-			ACCDET_EINT0_MEM_IN_SFT,
-			ACCDET_EINT0_MEM_IN_MASK);
-		if (eintID == M_PLUG_OUT) {
-			pr_notice("%s Plug-out, no dis micbias\n", __func__);
-			return;
-		}
-		/* if modify_vref_volt called, not need to dis micbias again */
-		if (dis_micbias_done == true) {
-			pr_notice("%s modify_vref_volt called\n", __func__);
-			return;
-		}
+	/* check EINT0 status, if plug out,
+	 * not need to disable accdet here
+	 */
+	eintID = accdet_read_bits(ACCDET_EINT0_MEM_IN_ADDR,
+		ACCDET_EINT0_MEM_IN_SFT,
+		ACCDET_EINT0_MEM_IN_MASK);
+	if (eintID == M_PLUG_OUT) {
+		pr_notice("%s Plug-out, no dis micbias\n", __func__);
+		return;
+	}
+	/* if modify_vref_volt called, not need to dis micbias again */
+	if (dis_micbias_done == true) {
+		pr_notice("%s modify_vref_volt called\n", __func__);
+		return;
 	}
 
 	cur_AB = accdet_read(ACCDET_MEM_IN_ADDR) >> ACCDET_STATE_MEM_IN_OFFSET;
-	cur_AB = cur_AB & ACCDET_STATE_AB_MASK;
+		cur_AB = cur_AB & ACCDET_STATE_AB_MASK;
 
 	/* if 3pole disable accdet
 	 * if <20k + 4pole, disable accdet will disable accdet
@@ -1623,6 +1656,7 @@ static void eint_work_callback(struct work_struct *work)
 {
 	if (accdet->cur_eint_state == EINT_PLUG_IN) {
 		/* disable vusb LP */
+		accdet_write(RG_LDO_VUSB_HW0_OP_EN_ADDR, 0x80);
 
 		mutex_lock(&accdet->res_lock);
 		accdet->eint_sync_flag = true;
@@ -1868,6 +1902,11 @@ static void accdet_work_callback(struct work_struct *work)
 			send_status_event(accdet->cable_type, 1);
 	}
 	mutex_unlock(&accdet->res_lock);
+	if (accdet->cable_type != NO_DEVICE) {
+		accdet_modify_vref_volt_self();
+		/* enable vusb LP */
+		accdet_write(RG_LDO_VUSB_HW0_OP_EN_ADDR, 0x85);
+	}
 
 	__pm_relax(accdet->wake_lock);
 }
@@ -2056,7 +2095,7 @@ static u32 config_moisture_detect_2_1(void)
 	 */
 
 	/* EINTVTH1K/5K/10K efuse */
-	ret = nvmem_device_read(accdet->accdet_efuse, 76*2, 2, &efuseval);
+	ret = nvmem_device_read(accdet->accdet_efuse, 96*2, 2, &efuseval);
 	eintvth = (int)(efuseval & ACCDET_CALI_MASK0);
 	pr_info("%s moisture_eint0 efuse=0x%x,eintvth=0x%x\n",
 		__func__, efuseval, eintvth);
@@ -2075,23 +2114,17 @@ static u32 config_moisture_detect_2_1_1(void)
 		accdet_dts.moisture_comp_vth);
 
 	/* EINTVTH1K/5K/10K efuse */
-	ret = nvmem_device_read(accdet->accdet_efuse, 77*2, 2, &efuseval);
+	ret = nvmem_device_read(accdet->accdet_efuse, 96*2, 2, &efuseval);
 	eintvth = (int)(efuseval & ACCDET_CALI_MASK0);
-	pr_info("%s moisture_eint2 - 1231 efuse=0x%x,eintvth=0x%x\n",
+	pr_info("%s moisture_eint0 efuse=0x%x,eintvth=0x%x\n",
 		__func__, efuseval, eintvth);
-
 	/* set moisture reference voltage MVTH */
 	if (eintvth == 0) {
-		pr_info("accdet efuse not read\n");
-		/* This is hardcode for no efuse chip */
-		pr_info("%s 0x2525 = 0x83\n", __func__);
-		accdet_write(0x2525, 0x83);
-		/* This is adjust for vref2 config*/
-		accdet_write(0x2526, 0x6);
+		pr_info("%s vref_1v = 0x81\n", __func__);
+		accdet_write(RG_ACCDETSPARE_H_ADDR, 0x81);
 	} else {
-		/* TODO check detail with DE */
-		accdet_update_bits(0x2525, 7, 0x1, ((eintvth >> 5) & 0x1));
-		accdet_update_bits(0x2526, 0, 0xf, (eintvth & 0xf));
+		pr_info("%s vref_1v = 0x%x\n", __func__, eintvth);
+		accdet_write(RG_ACCDETSPARE_H_ADDR, eintvth);
 	}
 	return 0;
 }
@@ -2140,7 +2173,7 @@ static irqreturn_t mtk_accdet_irq_handler_thread(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
-static irqreturn_t ext_eint_handler(int irq, void *data)
+static irqreturn_t ex_eint_handler(int irq, void *data)
 {
 	int ret = 0;
 
@@ -2152,8 +2185,7 @@ static irqreturn_t ext_eint_handler(int irq, void *data)
 			irq_set_irq_type(accdet->gpioirq, IRQ_TYPE_LEVEL_HIGH);
 		else
 			irq_set_irq_type(accdet->gpioirq, IRQ_TYPE_LEVEL_LOW);
-		if (gpio_is_valid(accdet->gpiopin))
-			gpio_set_debounce(accdet->gpiopin, accdet->gpio_hp_deb);
+		gpio_set_debounce(accdet->gpiopin, accdet->gpio_hp_deb);
 
 		accdet->cur_eint_state = EINT_PLUG_OUT;
 	} else {
@@ -2165,8 +2197,8 @@ static irqreturn_t ext_eint_handler(int irq, void *data)
 		else
 			irq_set_irq_type(accdet->gpioirq, IRQ_TYPE_LEVEL_HIGH);
 
-		if (gpio_is_valid(accdet->gpiopin))
-			gpio_set_debounce(accdet->gpiopin, accdet_dts.plugout_deb * 1000);
+		gpio_set_debounce(accdet->gpiopin,
+				accdet_dts.plugout_deb * 1000);
 
 		accdet->cur_eint_state = EINT_PLUG_IN;
 
@@ -2174,27 +2206,30 @@ static irqreturn_t ext_eint_handler(int irq, void *data)
 			mod_timer(&micbias_timer,
 				jiffies + MICBIAS_DISABLE_TIMER);
 		}
+
 	}
 
 	disable_irq_nosync(accdet->gpioirq);
 	ret = queue_work(accdet->eint_workqueue, &accdet->eint_work);
-
 	return IRQ_HANDLED;
 }
 
-static inline int ext_eint_setup(struct platform_device *pdev)
+static inline int ext_eint_setup(struct platform_device *platform_device)
 {
 	int ret = 0;
-	struct device_node *node = pdev->dev.of_node;
+	u32 ints[4] = { 0 };
+	struct device_node *node = NULL;
+	struct pinctrl_state *pins_default = NULL;
 
-	if (!node)
-		return -ENODEV;
-
-	accdet->pinctrl = devm_pinctrl_get(&pdev->dev);
+	accdet->pinctrl = devm_pinctrl_get(&platform_device->dev);
 	if (IS_ERR(accdet->pinctrl)) {
 		ret = PTR_ERR(accdet->pinctrl);
 		return ret;
 	}
+
+	pins_default = pinctrl_lookup_state(accdet->pinctrl, "default");
+	if (IS_ERR(pins_default))
+		ret = PTR_ERR(pins_default);
 
 	accdet->pins_eint = pinctrl_lookup_state(accdet->pinctrl,
 			"state_eint_as_int");
@@ -2204,29 +2239,27 @@ static inline int ext_eint_setup(struct platform_device *pdev)
 	}
 	pinctrl_select_state(accdet->pinctrl, accdet->pins_eint);
 
+	node = of_find_matching_node(node, mt6369_accdet_of_match);
+	if (!node)
+		return -1;
+
 	accdet->gpiopin = of_get_named_gpio(node, "deb-gpios", 0);
-	if (!gpio_is_valid(accdet->gpiopin))
-		dev_info(&pdev->dev, "No deb-gpios found\n");
-	else {
-		ret = of_property_read_u32(node, "debounce", &accdet->gpio_hp_deb);
-		if (ret < 0)
-			return ret;
+	ret = of_property_read_u32(node, "debounce",
+			&accdet->gpio_hp_deb);
+	if (ret < 0)
+		return ret;
 
-		gpio_set_debounce(accdet->gpiopin, accdet->gpio_hp_deb);
-	}
+	gpio_set_debounce(accdet->gpiopin, accdet->gpio_hp_deb);
 
-	accdet->gpioirq = platform_get_irq_byname(pdev, "ap_eint");
-	if (accdet->gpioirq < 0) {
-		dev_notice(&pdev->dev, "Get ap_eint failed (%d)\n", accdet->gpioirq);
-		return accdet->gpioirq;
-	}
+	accdet->gpioirq = irq_of_parse_and_map(node, 0);
+	ret = of_property_read_u32_array(node, "interrupts", ints,
+			ARRAY_SIZE(ints));
+	if (ret)
+		return ret;
 
-	accdet->accdet_eint_type = irqd_get_trigger_type(irq_get_irq_data(accdet->gpioirq));
-
-	/* Enable interrupt when acccet init done */
-	irq_set_status_flags(accdet->gpioirq, IRQ_NOAUTOEN);
-	ret = devm_request_threaded_irq(&pdev->dev, accdet->gpioirq, NULL, ext_eint_handler,
-					IRQF_ONESHOT, "accdet-eint", NULL);
+	accdet->accdet_eint_type = ints[1];
+	ret = request_irq(accdet->gpioirq, ex_eint_handler, IRQF_TRIGGER_NONE,
+		"accdet-eint", NULL);
 	if (ret)
 		return ret;
 
@@ -2485,6 +2518,9 @@ static void config_digital_init_by_mode(void)
 				ACCDET_EINT1_CEN_STABLE_SFT);
 		}
 	}
+	/* after receive n+1 number, interrupt issued. now is 2 times */
+	accdet_update_bit(ACCDET_EINT_M_PLUG_IN_NUM_ADDR,
+	  ACCDET_EINT_M_PLUG_IN_NUM_SFT);
 
 	/* setting HW mode, enable digital fast discharge
 	 * if use EINT0 & EINT1 detection, please modify
@@ -2544,10 +2580,6 @@ static void config_digital_init_by_mode(void)
 		accdet_update_bit(ACCDET_EINT_M_DETECT_EN_ADDR,
 			ACCDET_EINT_M_DETECT_EN_SFT);
 
-		accdet_update_bit(ACCDET_EINT0_CMPMEN_STABLE_ADDR,
-			ACCDET_EINT0_CMPMEN_STABLE_SFT);
-		accdet_update_bit(ACCDET_EINT_CMPMEN_SEL_ADDR,
-			ACCDET_EINT_CMPMEN_SEL_SFT);
 		/* wk1, disable hwmode */
 		accdet_write(ACCDET_EINT_HWMODE_EN_ADDR, 0x5);
 		accdet_update_bit(RG_HPLOUTPUTSTBENH_VAUDP15_ADDR,
@@ -2634,6 +2666,11 @@ static void config_eint_init_by_mode(void)
 		accdet_update_bit(RG_EINT1EN_ADDR,
 				RG_EINT1EN_SFT);
 	}
+	/* ESD switches on */
+	accdet_update_bit(RG_ACCDETSPARE_H_ADDR, 0);
+	/* before playback, set NCP pull low before nagative voltage */
+	accdet_update_bit(RG_NCP_PDDIS_EN_ADDR,
+			RG_NCP_PDDIS_EN_SFT);
 
 	if ((accdet_dts.eint_detect_mode == 0x1) ||
 		(accdet_dts.eint_detect_mode == 0x2) ||
@@ -2779,6 +2816,9 @@ static void accdet_init_once(void)
 		}
 		config_digital_init_by_mode();
 	} else if (HAS_CAP(accdet->data->caps, ACCDET_AP_GPIO_EINT)) {
+		/* set pull low pads and DCC mode */
+		accdet_write(RG_AUDACCDETMICBIAS0PULLLOW_ADDR,
+				0x8F);
 		/* disconnect configaccdet */
 		accdet_write(RG_EINT1CONFIGACCDET_ADDR,
 				0x0);
@@ -2846,8 +2886,6 @@ void mt6369_accdet_late_init(unsigned long data)
 		accdet_init();
 		accdet_init_debounce();
 		accdet_init_once();
-		if (HAS_CAP(accdet->data->caps, ACCDET_AP_GPIO_EINT))
-			enable_irq(accdet->gpioirq);
 	} else
 		pr_info("%s inited dts fail\n", __func__);
 }
@@ -2858,14 +2896,65 @@ void mt6369_accdet_modify_vref_volt(void)
 }
 EXPORT_SYMBOL_GPL(mt6369_accdet_modify_vref_volt);
 
+static void accdet_modify_vref_volt_self(void)
+{
+	u32 cur_AB, eintID;
+
+	if (accdet_dts.moisture_detect_mode == 0x5) {
+		/* make sure seq is disable micbias then connect vref2 */
+
+		/* check EINT0 status, if plug out,
+		 * not need to disable accdet here
+		 */
+		eintID = accdet_read_bits(ACCDET_EINT0_MEM_IN_ADDR,
+			ACCDET_EINT0_MEM_IN_SFT,
+			ACCDET_EINT0_MEM_IN_MASK);
+		if (eintID == M_PLUG_OUT) {
+			pr_info("%s Plug-out, no dis micbias\n", __func__);
+			return;
+		}
+		cur_AB = accdet_read(ACCDET_MEM_IN_ADDR) >>
+				ACCDET_STATE_MEM_IN_OFFSET;
+		cur_AB = cur_AB & ACCDET_STATE_AB_MASK;
+
+		/* if 3pole disable accdet
+		 * if <20k + 4pole, disable accdet will disable accdet
+		 * plug out interrupt. The behavior will same as 3pole
+		 */
+		if (accdet->cable_type == HEADSET_MIC) {
+			/* do nothing */
+		} else if ((accdet->cable_type == HEADSET_NO_MIC) ||
+			(cur_AB == ACCDET_STATE_AB_00) ||
+			(cur_AB == ACCDET_STATE_AB_11)) {
+			/* disable accdet_sw_en=0
+			 * disable accdet_hwmode_en=0
+			 */
+			accdet_clear_bit(ACCDET_SW_EN_ADDR,
+				ACCDET_SW_EN_SFT);
+			disable_accdet();
+			pr_info("%s MICBIAS:Disabled AB:0x%x c_type:0x%x\n",
+				__func__, cur_AB, accdet->cable_type);
+			dis_micbias_done = true;
+		}
+		/* disable comp1 delay window */
+		accdet_update_bit(RG_EINT0NOHYS_ADDR,
+			RG_EINT0NOHYS_SFT);
+		/* connect VREF2 to EINT0CMP */
+		accdet_update_bits(RG_EINTCOMPVTH_ADDR,
+			RG_EINTCOMPVTH_SFT, 0x3, 0x3);
+		pr_info("%s [0x%x]=0x%x [0x%x]=0x%x\n", __func__,
+			RG_EINT0NOHYS_ADDR,
+			accdet_read(RG_EINT0NOHYS_ADDR),
+			RG_EINTCOMPVTH_ADDR,
+			accdet_read(RG_EINTCOMPVTH_ADDR));
+	}
+}
 
 static void delay_init_work_callback(struct work_struct *work)
 {
 	accdet_init();
 	accdet_init_debounce();
 	accdet_init_once();
-	if (HAS_CAP(accdet->data->caps, ACCDET_AP_GPIO_EINT))
-		enable_irq(accdet->gpioirq);
 	pr_info("%s() done\n", __func__);
 }
 
@@ -2915,7 +3004,6 @@ static int mt6369_accdet_probe(struct platform_device *pdev)
 	struct resource *res;
 	const struct of_device_id *of_id =
 				of_match_device(mt6369_accdet_of_match, &pdev->dev);
-
 	if (!of_id) {
 		dev_dbg(&pdev->dev, "Error: No device match found\n");
 		return -ENODEV;
@@ -2975,7 +3063,7 @@ static int mt6369_accdet_probe(struct platform_device *pdev)
 	accdet_get_efuse();
 
 	/* register pmic interrupt */
-	accdet->accdet_irq = platform_get_irq_byname(pdev, "ACCDET_IRQ");
+	accdet->accdet_irq = platform_get_irq(pdev, 0);
 	if (accdet->accdet_irq < 0) {
 		dev_dbg(&pdev->dev,
 			"Error: Get accdet irq failed (%d)\n",
@@ -2994,7 +3082,7 @@ static int mt6369_accdet_probe(struct platform_device *pdev)
 	}
 
 	if (HAS_CAP(accdet->data->caps, ACCDET_PMIC_EINT0)) {
-		accdet->accdet_eint0 = platform_get_irq_byname(pdev, "ACCDET_EINT0");
+		accdet->accdet_eint0 = platform_get_irq(pdev, 1);
 		if (accdet->accdet_eint0 < 0) {
 			dev_dbg(&pdev->dev,
 				"Error: Get eint0 irq failed (%d)\n",
@@ -3013,7 +3101,7 @@ static int mt6369_accdet_probe(struct platform_device *pdev)
 			return ret;
 		}
 	} else if (HAS_CAP(accdet->data->caps, ACCDET_PMIC_EINT1)) {
-		accdet->accdet_eint1 = platform_get_irq_byname(pdev, "ACCDET_EINT1");
+		accdet->accdet_eint1 = platform_get_irq(pdev, 2);
 		if (accdet->accdet_eint1 < 0) {
 			dev_dbg(&pdev->dev,
 				"Error: Get eint1 irq failed (%d)\n",
@@ -3032,7 +3120,7 @@ static int mt6369_accdet_probe(struct platform_device *pdev)
 			return ret;
 		}
 	} else if (HAS_CAP(accdet->data->caps, ACCDET_PMIC_BI_EINT)) {
-		accdet->accdet_eint0 = platform_get_irq_byname(pdev, "ACCDET_EINT0");
+		accdet->accdet_eint0 = platform_get_irq(pdev, 1);
 		if (accdet->accdet_eint0 < 0) {
 			dev_dbg(&pdev->dev,
 				"Error: Get eint0 irq failed (%d)\n",
@@ -3050,7 +3138,7 @@ static int mt6369_accdet_probe(struct platform_device *pdev)
 				ret);
 			return ret;
 		}
-		accdet->accdet_eint1 = platform_get_irq_byname(pdev, "ACCDET_EINT1");
+		accdet->accdet_eint1 = platform_get_irq(pdev, 2);
 		if (accdet->accdet_eint1 < 0) {
 			dev_dbg(&pdev->dev,
 				"Error: Get eint1 irq failed (%d)\n",
@@ -3123,27 +3211,23 @@ static int mt6369_accdet_probe(struct platform_device *pdev)
 		ret = -1;
 		goto err_create_workqueue;
 	}
-
 	if (HAS_CAP(accdet->data->caps, ACCDET_AP_GPIO_EINT)) {
+		accdet->accdet_eint_type = IRQ_TYPE_LEVEL_LOW;
 		ret = ext_eint_setup(pdev);
-		if (ret) {
-			dev_notice(&pdev->dev, "ext_eint_setup failed, ret = %d\n", ret);
-			goto err_create_attr;
-		}
+		if (ret)
+			destroy_workqueue(accdet->eint_workqueue);
 	}
 
 	ret = accdet_create_attr(&mt6369_accdet_driver.driver);
 	if (ret) {
 		pr_notice("%s create_attr fail, ret = %d\n", __func__, ret);
-		goto err_create_attr;
+		goto err_create_workqueue;
 	}
 	atomic_set(&accdet_first, 1);
 	mod_timer(&accdet_init_timer, (jiffies + ACCDET_INIT_WAIT_TIMER));
 
 	return 0;
 
-err_create_attr:
-	destroy_workqueue(accdet->eint_workqueue);
 err_create_workqueue:
 	destroy_workqueue(accdet->dis_micbias_workqueue);
 err:

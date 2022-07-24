@@ -35,17 +35,8 @@
 #include "kd_imgsensor.h"
 #include "kd_imgsensor_define.h"
 #include "kd_imgsensor_errcode.h"
-//#include "../imgsensor_i2c.h"
-//#include "imgsensor_common.h"
 #include "s5k3p9spmipiraw_Sensor.h"
 
-#if IS_ENABLED(CONFIG_MTK_CAM_SECURITY_SUPPORT)
-#include "imgsensor_ca.h"
-#endif
-
-#ifdef VENDOR_EDIT
-	#undef VENDOR_EDIT
-#endif
 #define USE_REMOSAIC 1
 
 #ifndef USE_TNP_BURST
@@ -54,9 +45,6 @@
 
 #define PFX "S5K3P9SP_camera_sensor"
 #define LOG_INF(format, args...) pr_debug(PFX "[%s] " format, __func__, ##args)
-
-#define S5K3P9SP_EEPROM_READ_ID  0xA0
-#define S5K3P9SP_EEPROM_WRITE_ID 0xA1
 
 static DEFINE_SPINLOCK(imgsensor_drv_lock);
 
@@ -187,7 +175,7 @@ static struct imgsensor_struct imgsensor = {
 	.autoflicker_en = KAL_FALSE,
 	/*auto flicker enable:*/
 	/*KAL_FALSE for disable auto flicker,KAL_TRUE for enable auto flicker*/
-	.test_pattern = 0,
+	.test_pattern = KAL_FALSE,
 	/*test pattern mode or not.*/
 	/*KAL_FALSE for in test pattern mode, KAL_TRUE for normal output*/
 	.enable_secure = KAL_FALSE,
@@ -307,14 +295,7 @@ static kal_uint16 table_write_cmos_sensor(kal_uint16 *para, kal_uint32 len)
 	return 0;
 }
 
-static kal_uint16 read_cmos_eeprom_8(kal_uint16 addr)
-{
-	kal_uint16 get_byte = 0;
-	char pusendcmd[2] = {(char)(addr >> 8), (char)(addr & 0xFF) };
 
-	iReadRegI2C(pusendcmd, 2, (u8 *)&get_byte, 1, S5K3P9SP_EEPROM_READ_ID);
-	return get_byte;
-}
 
 static void set_dummy(void)
 {
@@ -4063,29 +4044,6 @@ static void slim_video_setting(void)
 	LOG_INF("E\n");
 }
 
-#define FOUR_CELL_SIZE 3072
-#define FOUR_CELL_ADDR 0x150F
-static u32 is_read_four_cell;
-static char four_cell_data[FOUR_CELL_SIZE + 2];
-static void read_four_cell_from_eeprom(char *data)
-{
-	int i;
-
-	if (is_read_four_cell != 1) {
-		LOG_INF("need to read from EEPROM\n");
-		four_cell_data[0] = (FOUR_CELL_SIZE & 0xFF);/*Low*/
-		four_cell_data[1] = ((FOUR_CELL_SIZE >> 8) & 0xFF);/*High*/
-		/*Multi-Read*/
-		for (i = 0; i < FOUR_CELL_SIZE; i++)
-			four_cell_data[i+2] = read_cmos_eeprom_8(FOUR_CELL_ADDR + i);
-		is_read_four_cell = 1;
-	}
-	if (data != NULL) {
-		LOG_INF("return data\n");
-		memcpy(data, four_cell_data, FOUR_CELL_SIZE);
-	}
-}
-
 /*************************************************************************
  * FUNCTION
  *	get_imgsensor_id
@@ -4122,7 +4080,6 @@ static kal_uint32 get_imgsensor_id(UINT32 *sensor_id)
 				pr_info("[%s] i2c write id: 0x%x, sensor id: 0x%x\n",
 					__func__, imgsensor.i2c_write_id, *sensor_id);
 				*sensor_id = S5K3P9SP_SENSOR_ID;
-				read_four_cell_from_eeprom(NULL);
 				return ERROR_NONE;
 			}
 			LOG_INF("Read sensor id fail, id: 0x%x\n",
@@ -4209,7 +4166,7 @@ static kal_uint32 open(void)
 	imgsensor.dummy_pixel = 0;
 	imgsensor.dummy_line = 0;
 	imgsensor.ihdr_mode = 0;
-	imgsensor.test_pattern = 0;
+	imgsensor.test_pattern = KAL_FALSE;
 	imgsensor.current_fps = imgsensor_info.pre.max_framerate;
 	spin_unlock(&imgsensor_drv_lock);
 
@@ -4767,36 +4724,17 @@ static kal_uint32 get_default_framerate_by_scenario(
 	return ERROR_NONE;
 }
 
-static kal_uint32 set_test_pattern_mode(kal_uint32 modes,
-	struct SET_SENSOR_PATTERN_SOLID_COLOR *pdata)
+static kal_uint32 set_test_pattern_mode(kal_bool enable)
 {
-	kal_uint16 Color_R, Color_Gr, Color_Gb, Color_B;
+	LOG_INF("enable: %d\n", enable);
 
-	pr_debug("set_test_pattern enum: %d\n", modes);
+	if (enable)
+		write_cmos_sensor_16_16(0x0600, 0x0002);
+	else
+		write_cmos_sensor_16_16(0x0600, 0x0000);
 
-	if (modes) {
-		//write_cmos_sensor_8(0x0600, modes>>4);
-		write_cmos_sensor_16_16(0x0600, modes);
-		if (modes == 1 && (pdata != NULL)) { //Solid Color
-			pr_debug("R=0x%x,Gr=0x%x,B=0x%x,Gb=0x%x",
-				pdata->COLOR_R, pdata->COLOR_Gr, pdata->COLOR_B, pdata->COLOR_Gb);
-			Color_R = (pdata->COLOR_R >> 22) & 0x3FF; //10bits depth color
-			Color_Gr = (pdata->COLOR_Gr >> 22) & 0x3FF;
-			Color_B = (pdata->COLOR_B >> 22) & 0x3FF;
-			Color_Gb = (pdata->COLOR_Gb >> 22) & 0x3FF;
-			write_cmos_sensor_16_8(0x0602, (Color_R >> 8) & 0x3);
-			write_cmos_sensor_16_8(0x0603, Color_R & 0xFF);
-			write_cmos_sensor_16_8(0x0604, (Color_Gr >> 8) & 0x3);
-			write_cmos_sensor_16_8(0x0605, Color_Gr & 0xFF);
-			write_cmos_sensor_16_8(0x0606, (Color_B >> 8) & 0x3);
-			write_cmos_sensor_16_8(0x0607, Color_B & 0xFF);
-			write_cmos_sensor_16_8(0x0608, (Color_Gb >> 8) & 0x3);
-			write_cmos_sensor_16_8(0x0609, Color_Gb & 0xFF);
-		}
-	} else
-		write_cmos_sensor_16_8(0x0600, 0x00); /*No pattern*/
 	spin_lock(&imgsensor_drv_lock);
-	imgsensor.test_pattern = modes;
+	imgsensor.test_pattern = enable;
 	spin_unlock(&imgsensor_drv_lock);
 	return ERROR_NONE;
 }
@@ -4816,7 +4754,7 @@ static kal_uint32 feature_control(MSDK_SENSOR_FEATURE_ENUM feature_id,
 	MSDK_SENSOR_REG_INFO_STRUCT *sensor_reg_data =
 		(MSDK_SENSOR_REG_INFO_STRUCT *) feature_para;
 
-	pr_debug("feature_id = %d\n", feature_id);
+	LOG_INF("feature_id = %d\n", feature_id);
 	switch (feature_id) {
 
 	case SENSOR_FEATURE_GET_GAIN_RANGE_BY_SCENARIO:
@@ -4948,8 +4886,7 @@ static kal_uint32 feature_control(MSDK_SENSOR_FEATURE_ENUM feature_id,
 			(MUINT32 *)(uintptr_t)(*(feature_data + 1)));
 		break;
 	case SENSOR_FEATURE_SET_TEST_PATTERN:
-		set_test_pattern_mode((UINT32)*feature_data,
-		(struct SET_SENSOR_PATTERN_SOLID_COLOR *)(uintptr_t)(*(feature_data + 1)));
+		set_test_pattern_mode((BOOL)*feature_data);
 		break;
 	/*for factory mode auto testing*/
 	case SENSOR_FEATURE_GET_TEST_PATTERN_CHECKSUM_VALUE:
@@ -4962,8 +4899,8 @@ static kal_uint32 feature_control(MSDK_SENSOR_FEATURE_ENUM feature_id,
 		spin_unlock(&imgsensor_drv_lock);
 		break;
 	case SENSOR_FEATURE_GET_CROP_INFO:
-		pr_debug("SENSOR_FEATURE_GET_CROP_INFO:");
-		pr_debug("scenarioId:%d\n", *feature_data_32);
+		LOG_INF("SENSOR_FEATURE_GET_CROP_INFO:");
+		LOG_INF("scenarioId:%d\n", *feature_data_32);
 		wininfo =
 			(struct SENSOR_WINSIZE_INFO_STRUCT *)
 			(uintptr_t)(*(feature_data + 1));
@@ -4998,8 +4935,8 @@ static kal_uint32 feature_control(MSDK_SENSOR_FEATURE_ENUM feature_id,
 		}
 		break;
 	case SENSOR_FEATURE_GET_PDAF_INFO:
-		pr_debug("SENSOR_FEATURE_GET_PDAF_INFO");
-		pr_debug("scenarioId:%lld\n", *feature_data);
+		LOG_INF("SENSOR_FEATURE_GET_PDAF_INFO");
+		LOG_INF("scenarioId:%lld\n", *feature_data);
 		PDAFinfo =
 			(struct SET_PD_BLOCK_INFO_T *)
 			(uintptr_t)(*(feature_data + 1));
@@ -5015,8 +4952,8 @@ static kal_uint32 feature_control(MSDK_SENSOR_FEATURE_ENUM feature_id,
 		}
 		break;
 	case SENSOR_FEATURE_GET_SENSOR_PDAF_CAPACITY:
-		pr_debug("SENSOR_FEATURE_GET_SENSOR_PDAF_CAPACITY");
-		pr_debug("scenarioId:%lld\n", *feature_data);
+		LOG_INF("SENSOR_FEATURE_GET_SENSOR_PDAF_CAPACITY");
+		LOG_INF("scenarioId:%lld\n", *feature_data);
 		/*PDAF capacity enable or not, 2p8 only full size support PDAF*/
 		switch (*feature_data) {
 		case MSDK_SCENARIO_ID_CAMERA_CAPTURE_JPEG:
@@ -5049,21 +4986,6 @@ static kal_uint32 feature_control(MSDK_SENSOR_FEATURE_ENUM feature_id,
 		set_shutter_frame_length((UINT16) *feature_data,
 			(UINT16) *(feature_data + 1));
 		break;
-	case SENSOR_FEATURE_GET_4CELL_DATA: {
-		char *data = (char *)(uintptr_t)(*(feature_data + 1));
-		UINT16 type = (UINT16)(*feature_data);
-
-		/*get 4 cell data from eeprom*/
-		if (type == FOUR_CELL_CAL_TYPE_XTALK_CAL) {
-			LOG_INF("Read Cross Talk Start");
-			read_four_cell_from_eeprom(data);
-			LOG_INF("Read Cross Talk = %02x %02x %02x %02x %02x %02x\n",
-				(UINT16)data[0], (UINT16)data[1],
-				(UINT16)data[2], (UINT16)data[3],
-				(UINT16)data[4], (UINT16)data[5]);
-		}
-		break;
-	}
 	case SENSOR_FEATURE_SET_STREAMING_SUSPEND:
 		LOG_INF("SENSOR_FEATURE_SET_STREAMING_SUSPEND\n");
 		streaming_control(KAL_FALSE);

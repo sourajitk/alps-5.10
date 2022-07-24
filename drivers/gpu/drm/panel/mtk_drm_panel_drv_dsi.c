@@ -6,7 +6,7 @@
 #include "mtk_drm_panel_drv.h"
 
 #ifdef CONFIG_MTK_ROUND_CORNER_SUPPORT
-#include "../mediatek/mtk_corner_pattern/mtk_data_hw_roundedpattern.h"
+#include "../mediatek/mediatek_v2/mtk_corner_pattern/mtk_data_hw_roundedpattern.h"
 #endif
 
 #define MAX_PANEL_OPERATION_NAME (256)
@@ -1064,7 +1064,7 @@ out:
 }
 
 static int mtk_panel_msync_te_level_switch_grp(void *dsi, dcs_grp_write_gce cb,
-		void *handle, struct drm_panel *panel, unsigned int fps_level)
+		void *handle, unsigned int fps_level)
 {
 	struct mtk_lcm_mode_dsi *mode_node = NULL;
 	int ret = 0;

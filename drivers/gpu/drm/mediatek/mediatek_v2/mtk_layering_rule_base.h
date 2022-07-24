@@ -118,6 +118,7 @@ struct hrt_sort_entry {
 	struct drm_mtk_layer_config *layer_info;
 	int key;
 	int overlap_w;
+	int idx;
 };
 
 struct layering_rule_info_t {
@@ -219,5 +220,4 @@ int mtk_layering_rule_ioctl(struct drm_device *drm, void *data,
 	struct drm_file *file_priv);
 
 bool is_triple_disp(struct drm_mtk_layering_info *disp_info);
-inline bool mtk_drm_has_valid_layer(void);
 #endif

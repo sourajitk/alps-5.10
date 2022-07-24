@@ -125,15 +125,12 @@ int mtk_dump_reg(struct mtk_ddp_comp *comp)
 		mtk_chist_dump(comp);
 		break;
 	case DDP_COMPONENT_Y2R0:
-	case DDP_COMPONENT_Y2R1:
 		mtk_y2r_dump(comp);
 		break;
-	case DDP_COMPONENT_DLO_ASYNC3:
-	case DDP_COMPONENT_DLO_ASYNC7:
+	case DDP_COMPONENT_DLO_ASYNC:
 		mtk_dlo_async_dump(comp);
 		break;
-	case DDP_COMPONENT_DLI_ASYNC3:
-	case DDP_COMPONENT_DLI_ASYNC7:
+	case DDP_COMPONENT_DLI_ASYNC:
 		mtk_dli_async_dump(comp);
 		break;
 	case DDP_COMPONENT_INLINE_ROTATE0:

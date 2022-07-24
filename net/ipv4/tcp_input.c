@@ -4974,6 +4974,10 @@ queue_and_out:
 		if (!RB_EMPTY_ROOT(&tp->out_of_order_queue)) {
 			tcp_ofo_queue(sk);
 
+			#ifdef OPLUS_BUG_STABILITY
+			tcp_dsack_set(sk, TCP_SKB_CB(skb)->seq, tp->rcv_nxt);
+			#endif /* OPLUS_BUG_STABILITY */
+
 			/* RFC5681. 4.2. SHOULD send immediate ACK, when
 			 * gap in queue is filled.
 			 */

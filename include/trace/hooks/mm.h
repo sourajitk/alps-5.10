@@ -91,6 +91,9 @@ DECLARE_HOOK(android_vh_oom_check_panic,
 DECLARE_HOOK(android_vh_save_vmalloc_stack,
 	TP_PROTO(unsigned long flags, struct vm_struct *vm),
 	TP_ARGS(flags, vm));
+DECLARE_HOOK(android_vh_kmalloc_slab,
+	TP_PROTO(unsigned int index, gfp_t flags, struct kmem_cache **s),
+	TP_ARGS(index, flags, s));
 DECLARE_HOOK(android_vh_show_stack_hash,
 	TP_PROTO(struct seq_file *m, struct vm_struct *v),
 	TP_ARGS(m, v));
@@ -117,19 +120,12 @@ DECLARE_HOOK(android_vh_mem_cgroup_css_online,
 DECLARE_HOOK(android_vh_mem_cgroup_css_offline,
 	TP_PROTO(struct cgroup_subsys_state *css, struct mem_cgroup *memcg),
 	TP_ARGS(css, memcg));
-DECLARE_HOOK(android_vh_kmalloc_slab,
-	TP_PROTO(unsigned int index, gfp_t flags, struct kmem_cache **s),
-	TP_ARGS(index, flags, s));
 DECLARE_HOOK(android_vh_mmap_region,
 	TP_PROTO(struct vm_area_struct *vma, unsigned long addr),
 	TP_ARGS(vma, addr));
 DECLARE_HOOK(android_vh_try_to_unmap_one,
 	TP_PROTO(struct vm_area_struct *vma, struct page *page, unsigned long addr, bool ret),
 	TP_ARGS(vma, page, addr, ret));
-struct device;
-DECLARE_HOOK(android_vh_subpage_dma_contig_alloc,
-	TP_PROTO(bool *allow_subpage_alloc, struct device *dev, size_t *size),
-	TP_ARGS(allow_subpage_alloc, dev, size));
 /* macro versions of hooks are no longer required */
 
 #endif /* _TRACE_HOOK_MM_H */

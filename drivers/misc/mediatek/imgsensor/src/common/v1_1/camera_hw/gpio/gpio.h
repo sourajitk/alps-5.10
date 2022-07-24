@@ -62,6 +62,8 @@ struct GPIO {
 	struct mutex         *pgpio_mutex;
 };
 
+extern void gpio_dump_regs(void);
+
 enum IMGSENSOR_RETURN
 imgsensor_hw_gpio_open(struct IMGSENSOR_HW_DEVICE **pdevice);
 

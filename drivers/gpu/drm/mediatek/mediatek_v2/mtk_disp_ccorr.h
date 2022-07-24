@@ -8,11 +8,13 @@
 
 #include <drm/mediatek_drm.h>
 
-struct mtk_disp_ccorr_data {
-	bool support_shadow;
-	bool need_bypass_shadow;
-	int single_pipe_ccorr_num;
-};
+// #ifdef OPLUS_BUG_STABILITY
+#define SILKY_ON_START_FRAME
+#ifdef SILKY_ON_START_FRAME
+extern bool g_is_silky_panel;
+#endif //SILKY_ON_START_FRAME
+// #endif OPLUS_BUG_STABILITY
+
 
 void ccorr_test(const char *cmd, char *debug_output);
 int ccorr_interface_for_color(unsigned int ccorr_idx,
@@ -33,6 +35,11 @@ int mtk_drm_ioctl_support_color_matrix(struct drm_device *dev, void *data,
 	struct drm_file *file_priv);
 int mtk_get_ccorr_caps(struct drm_mtk_ccorr_caps *ccorr_caps);
 int mtk_set_ccorr_caps(struct drm_mtk_ccorr_caps *ccorr_caps);
+// #ifdef OPLUS_BUG_STABILITY
+#ifdef SILKY_ON_START_FRAME
+void disp_ccorr_on_start_of_frame(void);
+#endif //SILKY_ON_START_FRAME
+// #endif OPLUS_BUG_STABILITY
 
 #endif
 

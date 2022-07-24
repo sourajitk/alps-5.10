@@ -52,11 +52,11 @@
 
 /* min buffer size is 0x400*32byte = 32KB */
 #define MMPROFILE_MIN_BUFFER_SIZE 0x400
+/* default buffer size is 0x18000*32byte = 3MB */
+#define MMPROFILE_DEFAULT_BUFFER_SIZE 0x18000
 /* max buffer size is 0x100000*32byte = 32MB */
 #define MMPROFILE_MAX_BUFFER_SIZE 0x100000
 #if IS_ENABLED(CONFIG_MTK_MMPROFILE_DEBUG)
-/* default buffer size is 0x18000*32byte = 3MB */
-#define MMPROFILE_DEFAULT_BUFFER_SIZE 0x18000
 /* min meta buffer size is 0x10000byte = 64KB */
 #define MMPROFILE_MIN_META_BUFFER_SIZE 0x10000
 /* default meta buffer size is 0x800000byte = 8MB */
@@ -65,8 +65,6 @@
 #define MMPROFILE_MAX_META_BUFFER_SIZE 0x4000000
 static unsigned int mmprofile_meta_datacookie = 1;
 #else
-/* min buffer size is 0x400*32byte = 32KB */
-#define MMPROFILE_DEFAULT_BUFFER_SIZE 0x400
 #define MMPROFILE_MIN_META_BUFFER_SIZE 0x0
 #define MMPROFILE_DEFAULT_META_BUFFER_SIZE 0x0
 #define MMPROFILE_MAX_META_BUFFER_SIZE 0x0
@@ -818,7 +816,9 @@ static void mmprofile_log_int(mmp_event event, enum mmp_log_type type,
 	struct mmprofile_event_t *p_event = NULL;
 	unsigned int index;
 	unsigned int lock;
-
+#ifdef OPLUS_BUG_STABILITY
+	return ;
+#endif /*OPLUS_BUG_STABILITY*/
 	if (!mmprofile_globals.enable)
 		return;
 	if ((event >= MMPROFILE_MAX_EVENT_COUNT) ||

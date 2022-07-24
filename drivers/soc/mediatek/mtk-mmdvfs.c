@@ -58,8 +58,6 @@ struct mmdvfs_drv_data {
 	u32 num_voltages;
 };
 
-static struct regulator *vcore_reg_id;
-
 #define MMDVFS_RECORD_NUM (10)
 struct mmdvfs_opp_record {
 	struct notifier_block nb;
@@ -283,8 +281,7 @@ int mmdvfs_dbg_clk_set(int step, bool is_force)
 {
 	struct mmdvfs_drv_data *drv_data;
 	s32 ret = 0;
-	u32 v_real = 0;
-	int volt = 0;
+	u64 volt = 0;
 	s32 last_force_step;
 
 	if (!dbg_data) {
@@ -333,21 +330,11 @@ int mmdvfs_dbg_clk_set(int step, bool is_force)
 				|| (last_force_step >= 0 && step < last_force_step)) {
 				regulator_set_voltage(
 					dbg_data->reg, volt, INT_MAX);
-				if (!IS_ERR(vcore_reg_id)) {
-					v_real = regulator_get_voltage(vcore_reg_id);
-					pr_notice("%s: step=%d volt=%llu r_volt=%d is_force=%d\n",
-							__func__, step, volt, v_real, is_force);
-				}
 				set_all_clk(drv_data, volt, true);
 			} else {
 				set_all_clk(drv_data, volt, false);
 				regulator_set_voltage(
 					dbg_data->reg, volt, INT_MAX);
-				if (!IS_ERR(vcore_reg_id)) {
-					v_real = regulator_get_voltage(vcore_reg_id);
-					pr_notice("%s: step=%d volt=%llu r_volt=%d is_force=%d\n",
-							__func__, step, volt, v_real, is_force);
-				}
 			}
 		} else {
 			regulator_set_voltage(dbg_data->reg, volt, INT_MAX);
@@ -570,12 +557,6 @@ static int mmdvfs_probe(struct platform_device *pdev)
 	ret = devm_regulator_register_notifier(reg, &drv_data->nb);
 	if (ret)
 		pr_notice("Failed to register notifier: %d\n", ret);
-
-	vcore_reg_id = regulator_get(dev, "_vcore");
-	if (IS_ERR(vcore_reg_id)) {
-		pr_info("regulator_get vcore_reg_id failed: %d\n",
-				PTR_ERR(vcore_reg_id));
-	}
 
 	mmdvfs_dbg = kzalloc(sizeof(*mmdvfs_dbg), GFP_KERNEL);
 	if (!mmdvfs_dbg)

@@ -33,11 +33,10 @@
 
 static bool mtk_dec_tput_init(struct mtk_vcodec_dev *dev)
 {
-	const int op_item_num = 7;
 	const int tp_item_num = 4;
 	const int bw_item_num = 2;
 	struct platform_device *pdev;
-	int i, j, larb_cnt, ret;
+	int i, larb_cnt, ret;
 	u32 nmin, nmax, cnt;
 
 	pdev = dev->plat_dev;
@@ -69,58 +68,6 @@ static bool mtk_dec_tput_init(struct mtk_vcodec_dev *dev)
 		dev->vdec_dvfs_params.per_frame_adjust_op_rate,
 		dev->vdec_dvfs_params.min_freq,
 		dev->vdec_dvfs_params.normal_max_freq);
-
-	/* max operating rate by codec / resolution */
-	cnt = of_property_count_u32_elems(pdev->dev.of_node, "max-op-rate-table");
-	dev->vdec_op_rate_cnt = cnt / op_item_num;
-
-	mtk_v4l2_debug(6, "[VDEC] max-op-rate table elements %u, %d per line",
-			cnt, op_item_num);
-	if (!dev->vdec_op_rate_cnt) {
-		mtk_v4l2_debug(0, "[VDEC] max-op-rate-table not exist");
-		return false;
-	}
-
-	dev->vdec_dflt_op_rate = vzalloc(sizeof(struct vcodec_op_rate) * dev->vdec_op_rate_cnt);
-
-	mtk_v4l2_debug(6, "[VDEC] vzalloc %zu x %d res %p",
-			sizeof(struct vcodec_op_rate), dev->vdec_op_rate_cnt,
-			dev->vdec_dflt_op_rate);
-	if (!dev->vdec_dflt_op_rate) {
-		mtk_v4l2_debug(0, "[VDEC] vzalloc vdec_dflt_op_rate table failed");
-		return false;
-	}
-
-	for (i = 0; i < dev->vdec_op_rate_cnt; i++) {
-		ret = of_property_read_u32_index(pdev->dev.of_node, "max-op-rate-table",
-				i * op_item_num, &dev->vdec_dflt_op_rate[i].codec_fmt);
-		if (ret) {
-			mtk_v4l2_debug(0, "[VDEC] Cannot get default op rate codec_fmt");
-			return false;
-		}
-
-		for (j = 0; j < (op_item_num - 1) / 2; j++) {
-			ret = of_property_read_u32_index(pdev->dev.of_node, "max-op-rate-table",
-					i * op_item_num + 1 + j * 2,
-					(u32 *)&dev->vdec_dflt_op_rate[i].pixel_per_frame[j]);
-			if (ret) {
-				mtk_v4l2_debug(0, "[VDEC] Cannot get pixel per frame %d %d",
-						i, j);
-				return false;
-			}
-
-			ret = of_property_read_u32_index(pdev->dev.of_node, "max-op-rate-table",
-					i * op_item_num + 2 + j * 2,
-					(u32 *)&dev->vdec_dflt_op_rate[i].max_op_rate[j]);
-			if (ret) {
-				mtk_v4l2_debug(0, "[VDEC] Cannot get max_op_rate %d %d",
-						i, j);
-				return false;
-			}
-		}
-		dev->vdec_dflt_op_rate[i].codec_type = 0;
-	}
-
 
 	/* throughput */
 	cnt = of_property_count_u32_elems(pdev->dev.of_node, "throughput-table");
@@ -222,19 +169,6 @@ static bool mtk_dec_tput_init(struct mtk_vcodec_dev *dev)
 	mtk_v4l2_debug(0, "[VDEC] tput_cnt %d, cfg_cnt %d, port_cnt %d",
 		dev->vdec_tput_cnt, dev->vdec_cfg_cnt, dev->vdec_port_cnt);
 
-	for (i = 0; i < dev->vdec_op_rate_cnt; i++) {
-		mtk_v4l2_debug(0, "[VDEC] oprate fmt %u, %u/%u,%u/%u,%u/%u,%u/%u",
-			dev->vdec_dflt_op_rate[i].codec_fmt,
-			dev->vdec_dflt_op_rate[i].pixel_per_frame[0],
-			dev->vdec_dflt_op_rate[i].max_op_rate[0],
-			dev->vdec_dflt_op_rate[i].pixel_per_frame[1],
-			dev->vdec_dflt_op_rate[i].max_op_rate[1],
-			dev->vdec_dflt_op_rate[i].pixel_per_frame[2],
-			dev->vdec_dflt_op_rate[i].max_op_rate[2],
-			dev->vdec_dflt_op_rate[i].pixel_per_frame[3],
-			dev->vdec_dflt_op_rate[i].max_op_rate[3]);
-	}
-
 	for (i = 0; i < dev->vdec_tput_cnt; i++) {
 		mtk_v4l2_debug(0, "[VDEC] tput fmt %u, cfg %d, cy1 %u, cy2 %u",
 			dev->vdec_tput[i].codec_fmt,
@@ -255,11 +189,6 @@ static bool mtk_dec_tput_init(struct mtk_vcodec_dev *dev)
 
 static void mtk_dec_tput_deinit(struct mtk_vcodec_dev *dev)
 {
-	if (dev->vdec_dflt_op_rate) {
-		vfree(dev->vdec_dflt_op_rate);
-		dev->vdec_dflt_op_rate = 0;
-	}
-
 	if (dev->vdec_tput) {
 		vfree(dev->vdec_tput);
 		dev->vdec_tput = 0;
@@ -281,11 +210,8 @@ void mtk_prepare_vdec_dvfs(struct mtk_vcodec_dev *dev)
 	int i = 0;
 	bool tput_ret = false;
 
-	INIT_LIST_HEAD(&dev->vdec_dvfs_inst);
-
 	ret = dev_pm_opp_of_add_table(&dev->plat_dev->dev);
 	if (ret < 0) {
-		dev->vdec_reg = 0;
 		mtk_v4l2_debug(0, "[VDEC] Failed to get opp table (%d)", ret);
 		return;
 	}
@@ -307,6 +233,7 @@ void mtk_prepare_vdec_dvfs(struct mtk_vcodec_dev *dev)
 		dev_pm_opp_put(opp);
 	}
 
+	INIT_LIST_HEAD(&dev->vdec_dvfs_inst);
 	tput_ret = mtk_dec_tput_init(dev);
 #endif
 }
@@ -412,8 +339,6 @@ void mtk_vdec_pmqos_begin_inst(struct mtk_vcodec_ctx *ctx)
 
 	mtk_v4l2_debug(6, "[VDEC] ctx = %p",  ctx);
 	dev = ctx->dev;
-	if (dev->vdec_reg == 0)
-		return;
 
 	for (i = 0; i < dev->vdec_port_cnt; i++) {
 		target_bw = (u64)dev->vdec_port_bw[i].port_base_bw *
@@ -449,8 +374,6 @@ void mtk_vdec_pmqos_end_inst(struct mtk_vcodec_ctx *ctx)
 
 	mtk_v4l2_debug(6, "[VDEC] ctx = %p",  ctx);
 	dev = ctx->dev;
-	if (dev->vdec_reg == 0)
-		return;
 
 	for (i = 0; i < dev->vdec_port_cnt; i++) {
 		target_bw = (u64)dev->vdec_port_bw[i].port_base_bw *

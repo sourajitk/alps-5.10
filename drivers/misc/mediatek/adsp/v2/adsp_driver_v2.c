@@ -246,18 +246,14 @@ static int adsp_core_drv_probe(struct platform_device *pdev)
 	struct of_phandle_args spec;
 	u64 system_info[2];
 
-	pr_info("%s: adsp core init\n", __func__);
-
 	/* create private data */
 	pdata = devm_kzalloc(dev, sizeof(*pdata), GFP_KERNEL);
 	if (!pdata)
 		return -ENOMEM;
 
 	match = of_match_node(adsp_core_of_ids, dev->of_node);
-	if (!match) {
-		pr_info("%s: cannot find match node\n", __func__);
+	if (!match)
 		return -ENODEV;
-	}
 
 	desc = (struct adsp_core_description *)match->data;
 
@@ -289,11 +285,8 @@ static int adsp_core_drv_probe(struct platform_device *pdev)
 	pdata->sysram_phys = (phys_addr_t)system_info[0];
 	pdata->sysram_size = (size_t)system_info[1];
 
-	if (pdata->sysram_phys == 0 || pdata->sysram_size == 0) {
-		pr_info("%s: get property fail, sysram_phys: 0x%llx, sysram_size: %zu\n",
-			__func__, pdata->sysram_phys, pdata->sysram_size);
+	if (pdata->sysram_phys == 0 || pdata->sysram_size == 0)
 		return -ENODEV;
-	}
 	pdata->sysram = ioremap_wc(pdata->sysram_phys, pdata->sysram_size);
 
 	of_property_read_u32(dev->of_node, "feature_control_bits",
@@ -302,14 +295,14 @@ static int adsp_core_drv_probe(struct platform_device *pdev)
 	/* mailbox channel parsing */
 	if (of_parse_phandle_with_args(dev->of_node, "mboxes",
 				       "#mbox-cells", 0, &spec)) {
-		pr_info("%s: can't parse \"mboxes\" property\n", __func__);
+		dev_dbg(dev, "%s: can't parse \"mboxes\" property\n", __func__);
 		return -ENODEV;
 	}
 	pdata->send_mbox = get_adsp_mbox_pin_send(spec.args[0]);
 
 	if (of_parse_phandle_with_args(dev->of_node, "mboxes",
 				       "#mbox-cells", 1, &spec)) {
-		pr_info("%s: can't parse \"mboxes\" property\n", __func__);
+		dev_dbg(dev, "%s: can't parse \"mboxes\" property\n", __func__);
 		return -ENODEV;
 	}
 	pdata->recv_mbox = get_adsp_mbox_pin_recv(spec.args[0]);
@@ -401,8 +394,7 @@ static int __init platform_adsp_init(void)
 
 	register_3way_semaphore_notifier(&adsp_semaphore_init_notifier);
 
-	adsp_system_bootup();
-	return 0;
+	return adsp_system_bootup();
 }
 
 static void __exit platform_adsp_exit(void)

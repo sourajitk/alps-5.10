@@ -637,7 +637,7 @@ static void wrot_color_fmt(struct mml_frame_config *cfg,
 	u16 profile_out = cfg->info.dest[wrot_frm->out_idx].data.profile;
 
 	wrot_frm->mat_en = 0;
-	wrot_frm->mat_sel = 15;
+	wrot_frm->mat_sel = 0;
 	wrot_frm->bbp_y = MML_FMT_BITS_PER_PIXEL(fmt);
 
 	switch (fmt) {
@@ -794,6 +794,8 @@ static void wrot_color_fmt(struct mml_frame_config *cfg,
 	/* Enable dither */
 	if (MML_FMT_10BIT(cfg->info.src.format) && !MML_FMT_10BIT(fmt)) {
 		wrot_frm->mat_en = 1;
+		if (!wrot_frm->mat_sel) // if didn't set profile
+			wrot_frm->mat_sel = 15;
 		wrot_frm->dither_con = (0x1 << 10) +
 			 (0x0 << 8) +
 			 (0x0 << 4) +
@@ -2079,7 +2081,7 @@ static void wrot_debug_dump(struct mml_comp *comp)
 		(debug[2] >> 1) & 0x1, (debug[2] >> 2) & 0x1,
 		(debug[2] >> 3) & 0x1);
 	state = debug[2] & 0x1;
-	smi_req = (debug[24] >> 30) & 0x1;
+	smi_req = (debug[18] >> 30) & 0x1;
 	mml_err("WROT state: %#x (%s)", state, wrot_state(state));
 	mml_err("WROT x_cnt %u y_cnt %u",
 		debug[9] & 0xffff, (debug[9] >> 16) & 0xffff);

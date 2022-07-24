@@ -172,8 +172,6 @@ struct cmdq_pkt {
 	struct cmdq_pkt_err	err_data;
 	cmdq_aee_cb		aee_cb;
 	u32			vcp_eng;
-
-	struct work_struct	destroy_work;
 };
 
 struct cmdq_thread {
@@ -191,6 +189,7 @@ struct cmdq_thread {
 	u64			timer_mod;
 	u64			irq_time;
 	u32			irq_task;
+	atomic_t		usage;
 };
 
 extern int mtk_cmdq_log;
@@ -287,8 +286,8 @@ void cmdq_thread_dump_all(void *mbox_cmdq, const bool lock, const bool dump_pkt,
 void cmdq_thread_dump_all_seq(void *mbox_cmdq, struct seq_file *seq);
 void cmdq_mbox_thread_remove_task(struct mbox_chan *chan,
 	struct cmdq_pkt *pkt);
-void cmdq_mbox_enable(void *chan);
-void cmdq_mbox_disable(void *chan);
+s32 cmdq_mbox_enable(void *chan);
+s32 cmdq_mbox_disable(void *chan);
 s32 cmdq_mbox_get_usage(void *chan);
 void *cmdq_mbox_get_base(void *chan);
 phys_addr_t cmdq_mbox_get_base_pa(void *chan);

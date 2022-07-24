@@ -21,8 +21,6 @@
 #include <linux/reboot.h>
 #include <linux/workqueue.h>
 #include <linux/tracepoint.h>
-#include <linux/of.h>
-#include <linux/libfdt.h> // fdt32_ld
 
 #include "selinux/mkp_security.h"
 #include "selinux/mkp_policycap.h"
@@ -38,12 +36,12 @@ DEBUG_SET_LEVEL(DEBUG_LEVEL_ERR);
 
 struct work_struct *avc_work;
 
-static uint32_t g_ro_avc_handle __ro_after_init;
-static uint32_t g_ro_cred_handle __ro_after_init;
-static struct page *avc_pages __ro_after_init;
-static struct page *cred_pages __ro_after_init;
-int avc_array_sz __ro_after_init;
-int cred_array_sz __ro_after_init;
+static uint32_t g_ro_avc_handle;
+static uint32_t g_ro_cred_handle;
+static struct page *avc_pages;
+static struct page *cred_pages;
+int avc_array_sz;
+int cred_array_sz;
 int rem;
 static bool g_initialized;
 static struct selinux_avc *g_avc;
@@ -79,7 +77,6 @@ static void mkp_trace_event_func(struct timer_list *unused) // do not use sleep
 #endif
 
 struct rb_root mkp_rbtree = RB_ROOT;
-DEFINE_RWLOCK(mkp_rbtree_rwlock);
 
 #if !defined(CONFIG_KASAN_GENERIC) && !defined(CONFIG_KASAN_SW_TAGS)
 static void *p_stext;
@@ -153,7 +150,6 @@ static void probe_android_vh_set_memory_nx(void *ignore, unsigned long addr,
 	struct mkp_rb_node *found = NULL;
 	phys_addr_t phys_addr;
 	uint32_t policy;
-	unsigned long flags;
 
 	if (((unsigned long)THIS_MODULE->init_layout.base) == addr) {
 		return;
@@ -176,13 +172,11 @@ static void probe_android_vh_set_memory_nx(void *ignore, unsigned long addr,
 	for (i = 0; i < nr_pages; i++) {
 		pfn = vmalloc_to_pfn((void *)(addr+i*PAGE_SIZE));
 		phys_addr = pfn << PAGE_SHIFT;
-		write_lock_irqsave(&mkp_rbtree_rwlock, flags);
 		found = mkp_rbtree_search(&mkp_rbtree, phys_addr);
 		if (found != NULL && found->addr != 0 && found->size != 0) {
 			ret = mkp_destroy_handle(policy, found->handle);
 			ret = mkp_rbtree_erase(&mkp_rbtree, phys_addr);
 		}
-		write_unlock_irqrestore(&mkp_rbtree_rwlock, flags);
 	}
 }
 
@@ -731,17 +725,6 @@ int __init mkp_demo_init(void)
 {
 	int ret = 0, ret_erri_line;
 	unsigned long size = 0x100000;
-	struct device_node *node;
-	u32 mkp_policy = 0x0001ffff;
-
-	node = of_find_node_by_path("/chosen");
-	if (node) {
-		if (of_property_read_u32(node, "mkp,policy", &mkp_policy) == 0)
-			MKP_DEBUG("mkp_policy: %x\n", mkp_policy);
-		else
-			MKP_WARN("mkp,policy cannot be found, use default\n");
-	} else
-		MKP_WARN("chosen node cannot be found, use default\n");
 
 	MKP_DEBUG("%s: start\n", __func__);
 	if (sizeof(phys_addr_t) != sizeof(unsigned long)) {
@@ -750,7 +733,7 @@ int __init mkp_demo_init(void)
 	}
 
 	/* Set policy control */
-	mkp_set_policy(mkp_policy);
+	mkp_set_policy();
 
 	/* Hook up interesting tracepoints and update corresponding policy_ctrl */
 	mkp_hookup_tracepoints();

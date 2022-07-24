@@ -23,8 +23,6 @@
 #include "mtk_drm_drv.h"
 #include "mtk_disp_color.h"
 #include "mtk_dump.h"
-#include "platform/mtk_drm_6789.h"
-#include "mtk_disp_ccorr.h"
 
 #define UNUSED(expr) (void)(expr)
 #define index_of_color(module) ((module == DDP_COMPONENT_COLOR0) ? 0 : 1)
@@ -65,7 +63,6 @@ bool g_legacy_color_cust;
 #define C1_OFFSET (0)
 #define color_get_offset(module) (0)
 #define is_color1_module(module) (0)
-struct drm_mtk_ccorr_caps g_ccorr_caps;
 
 enum COLOR_IOCTL_CMD {
 	SET_PQPARAM = 0,
@@ -73,6 +70,28 @@ enum COLOR_IOCTL_CMD {
 	WRITE_REG,
 	BYPASS_COLOR,
 	PQ_SET_WINDOW
+};
+
+enum PQ_REG_TABLE_IDX {
+	TUNING_DISP_COLOR = 0,
+	TUNING_DISP_CCORR,	// 1
+	TUNING_DISP_AAL,	// 2
+	TUNING_DISP_GAMMA,	// 3
+	TUNING_DISP_DITHER,	// 4
+	TUNING_DISP_CCORR1,	// 5
+	TUNING_DISP_TDSHP,	// 6
+	TUNING_DISP_C3D,	// 7
+	TUNING_REG_MAX
+};
+
+struct mtk_disp_color_data {
+	unsigned int color_offset;
+	bool support_color21;
+	bool support_color30;
+	unsigned long reg_table[TUNING_REG_MAX];
+	unsigned int color_window;
+	bool support_shadow;
+	bool need_bypass_shadow;
 };
 
 static struct MDP_COLOR_CAP mdp_color_cap;
@@ -2697,20 +2716,15 @@ int mtk_drm_ioctl_read_sw_reg(struct drm_device *dev, void *data,
 		private->ddp_comp[DDP_COMPONENT_GAMMA0];
 	struct mtk_ddp_comp *aal_comp =
 		private->ddp_comp[DDP_COMPONENT_AAL0];
+#if defined(CCORR_SUPPORT)
+	struct mtk_ddp_comp *ccorr_comp =
+		private->ddp_comp[DDP_COMPONENT_CCORR0];
+#endif
 	struct mtk_ddp_comp *disp_tdshp_comp =
 		private->ddp_comp[DDP_COMPONENT_TDSHP0];
 	unsigned int ret = 0;
 	unsigned int reg_id = rParams->reg;
 	struct resource res;
-#if defined(CCORR_SUPPORT)
-	struct mtk_ddp_comp *ccorr_comp;
-
-	mtk_get_ccorr_caps(&g_ccorr_caps);
-	if (g_ccorr_caps.ccorr_number != 2)
-		ccorr_comp = private->ddp_comp[DDP_COMPONENT_CCORR0];
-	else
-		ccorr_comp = private->ddp_comp[DDP_COMPONENT_CCORR1];
-#endif
 
 	if (reg_id >= SWREG_PQDS_DS_EN && reg_id <= SWREG_PQDS_GAIN_0) {
 		ret = (unsigned int)g_PQ_DS_Param.param
@@ -2969,13 +2983,8 @@ int mtk_drm_ioctl_read_reg(struct drm_device *dev, void *data,
 	struct mtk_drm_private *private = dev->dev_private;
 	struct mtk_ddp_comp *comp = private->ddp_comp[DDP_COMPONENT_COLOR0];
 	unsigned long flags;
-	struct mtk_ddp_comp *ccorr_comp;
-
-	mtk_get_ccorr_caps(&g_ccorr_caps);
-	if (g_ccorr_caps.ccorr_number != 2)
-		ccorr_comp = private->ddp_comp[DDP_COMPONENT_CCORR0];
-	else
-		ccorr_comp = private->ddp_comp[DDP_COMPONENT_CCORR1];
+	struct mtk_ddp_comp *ccorr_comp =
+		private->ddp_comp[DDP_COMPONENT_CCORR0];
 
 	pa = (unsigned int)rParams->reg;
 
@@ -3022,16 +3031,9 @@ int mtk_drm_ioctl_write_reg(struct drm_device *dev, void *data,
 	struct mtk_ddp_comp *comp = private->ddp_comp[DDP_COMPONENT_COLOR0];
 	struct drm_crtc *crtc = private->crtc[0];
 	struct DISP_WRITE_REG *wParams = data;
-	struct mtk_ddp_comp *ccorr_comp;
-	unsigned int pa;
-
-	mtk_get_ccorr_caps(&g_ccorr_caps);
-	if (g_ccorr_caps.ccorr_number != 2)
-		ccorr_comp = private->ddp_comp[DDP_COMPONENT_CCORR0];
-	else
-		ccorr_comp = private->ddp_comp[DDP_COMPONENT_CCORR1];
-
-	pa = (unsigned int)wParams->reg;
+	struct mtk_ddp_comp *ccorr_comp =
+		private->ddp_comp[DDP_COMPONENT_CCORR0];
+	unsigned int pa = (unsigned int)wParams->reg;
 
 	if (color_is_reg_addr_valid(comp, pa) < 0) {
 		DDPPR_ERR("reg write, addr invalid, pa:0x%x\n", pa);
@@ -3639,8 +3641,6 @@ static const struct of_device_id mtk_disp_color_driver_dt_match[] = {
 	 .data = &mt2701_color_driver_data},
 	{.compatible = "mediatek,mt6779-disp-color",
 	 .data = &mt6779_color_driver_data},
-	{.compatible = "mediatek,mt6789-disp-color",
-	 .data = &mt6789_color_driver_data},
 	{.compatible = "mediatek,mt6885-disp-color",
 	 .data = &mt6885_color_driver_data},
 	{.compatible = "mediatek,mt8173-disp-color",

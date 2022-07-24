@@ -30,8 +30,10 @@ static int policy_num;
 static int freq_limit_max_notifier_call(struct notifier_block *nb,
 					 unsigned long freq_limit_max, void *ptr)
 {
-	int i, cpu, policy_idx = nb - freq_limit_max_notifier;
-	struct em_perf_domain *pd;
+	int cpu, policy_idx = nb - freq_limit_max_notifier;
+	int idx_max;
+	unsigned long cap;
+	struct cpufreq_policy *policy;
 
 	if (policy_idx < 0 || policy_idx >= policy_num) {
 		pr_info("freq_limit_max_notifier_call: policy_idx over-index\n");
@@ -40,25 +42,33 @@ static int freq_limit_max_notifier_call(struct notifier_block *nb,
 
 	for_each_possible_cpu(cpu) {
 		if (per_cpu(policy_id_for_cpu, cpu) == policy_idx) {
-			pd = em_cpu_get(cpu);
-			if (pd)
+			policy = cpufreq_cpu_get(cpu);
+			if (policy)
 				break;
 		}
 	}
 
-	if (!pd) {
-		pr_info("policy_idx=%d: em_cpu_get failed\n", policy_idx);
+	if (!policy) {
+		pr_info("policy_idx=%d: cpufreq_cpu_get failed\n", policy_idx);
 		return -1;
 	}
 
-	for (i = 0; i < pd->nr_perf_states; i++) {
-		if (pd->table[pd->nr_perf_states - i - 1].frequency <= freq_limit_max)
-			break;
+	if (policy->freq_table_sorted == CPUFREQ_TABLE_SORTED_ASCENDING)
+		idx_max = cpufreq_table_find_index_ah(policy, freq_limit_max);
+	else
+		idx_max = cpufreq_table_find_index_dh(policy, freq_limit_max);
+
+	cpufreq_cpu_put(policy);
+
+	if (idx_max < 0) {
+		pr_info("policy_idx=%d: mapping cpu frequency index failed\n", policy_idx);
+		return -1;
 	}
 
 	for_each_possible_cpu(cpu) {
 		if (per_cpu(policy_id_for_cpu, cpu) == policy_idx) {
-			per_cpu(max_freq_scale, cpu) = pd_get_opp_capacity(cpu, i);
+			cap = pd_get_opp_capacity(cpu, idx_max);
+			per_cpu(max_freq_scale, cpu) = cap;
 		}
 	}
 

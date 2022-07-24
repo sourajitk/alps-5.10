@@ -29,8 +29,6 @@
 #include "../mediatek/mediatek_v2/mtk_drm_graphics_base.h"
 #endif
 
-#include "../mediatek/mediatek_v2/mtk_corner_pattern/mtk_data_hw_roundedpattern.h"
-
 #include "../../../misc/mediatek/gate_ic/gate_i2c.h"
 
 /* enable this to check panel self -bist pattern */
@@ -90,11 +88,9 @@ static struct i2c_driver _lcm_i2c_driver = {
 /*****************************************************************************
  * Function
  *****************************************************************************/
-
 #ifdef VENDOR_EDIT
-// shifan@bsp.tp 20191226 add for loading tp fw when screen lighting on
 extern void lcd_queue_load_tp_fw(void);
-#endif /*VENDOR_EDIT*/
+#endif
 
 static int _lcm_i2c_probe(struct i2c_client *client,
 			  const struct i2c_device_id *id)
@@ -843,7 +839,6 @@ static int jdi_prepare(struct drm_panel *panel)
 #endif
 
 #ifdef VENDOR_EDIT
-	// shifan@bsp.tp 20191226 add for loading tp fw when screen lighting on
 	lcd_queue_load_tp_fw();
 #endif
 
@@ -984,9 +979,6 @@ static struct mtk_panel_params ext_params = {
 		.hfp = 76,
 		.vfp = 2575,
 	},
-	.corner_pattern_height = ROUND_CORNER_H_TOP,
-	.corner_pattern_tp_size = sizeof(top_rc_pattern),
-	.corner_pattern_lt_addr = (void *)top_rc_pattern,
 };
 
 static struct mtk_panel_params ext_params_90hz = {
@@ -1068,9 +1060,6 @@ static struct mtk_panel_params ext_params_90hz = {
 		.hfp = 76,
 		.vfp = 905,
 	},
-	.corner_pattern_height = ROUND_CORNER_H_TOP,
-	.corner_pattern_tp_size = sizeof(top_rc_pattern),
-	.corner_pattern_lt_addr = (void *)top_rc_pattern,
 };
 
 static struct mtk_panel_params ext_params_120hz = {
@@ -1152,9 +1141,6 @@ static struct mtk_panel_params ext_params_120hz = {
 		.hfp = 76,
 		.vfp = 82,
 	},
-	.corner_pattern_height = ROUND_CORNER_H_TOP,
-	.corner_pattern_tp_size = sizeof(top_rc_pattern),
-	.corner_pattern_lt_addr = (void *)top_rc_pattern,
 };
 
 static int panel_ata_check(struct drm_panel *panel)
@@ -1428,16 +1414,6 @@ static int jdi_probe(struct mipi_dsi_device *dsi)
 		value = 0;
 	else
 		ctx->gate_ic = value;
-
-	value = 0;
-	ret = of_property_read_u32(dev->of_node, "rc-enable", &value);
-	if (ret < 0)
-		value = 0;
-	else {
-		ext_params.round_corner_en = value;
-		ext_params_90hz.round_corner_en = value;
-		ext_params_120hz.round_corner_en = value;
-	}
 
 	backlight = of_parse_phandle(dev->of_node, "backlight", 0);
 	if (backlight) {

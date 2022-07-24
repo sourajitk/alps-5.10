@@ -1489,10 +1489,6 @@ void musb_shutdown(struct platform_device *pdev)
 	#endif
 
 	DBG(0, "shut down\n");
-
-	DBG(0, "Disable musb irq.\n");
-	disable_irq_nosync(musb->nIrq);
-
 	pr_debug("%s, start to shut down\n", __func__);
 	pm_runtime_get_sync(musb->controller);
 
@@ -3227,7 +3223,7 @@ static struct musb_fifo_cfg fifo_cfg[]  = {
 /*=======================================================================*/
 
 #ifdef FPGA_PLATFORM
-int usb_enable_clock(bool enable)
+bool usb_enable_clock(bool enable)
 {
 	return true;
 }
@@ -3324,13 +3320,12 @@ EXPORT_SYMBOL(usb_prepare_clock);
 
 static DEFINE_SPINLOCK(musb_reg_clock_lock);
 
-int usb_enable_clock(bool enable)
+bool usb_enable_clock(bool enable)
 {
 	static int count;
 	static int real_enable = 0, real_disable;
 	static int virt_enable = 0, virt_disable;
 	unsigned long flags;
-	int ret = 0;
 
 	DBG(1, "enable(%d),count(%d),<%d,%d,%d,%d>\n",
 	    enable, count, virt_enable, virt_disable,
@@ -3386,7 +3381,6 @@ int usb_enable_clock(bool enable)
 			clk_disable(glue->src_clk);
 			clk_disable(glue->dma_clk);
 			clk_disable(glue->phy_clk);
-			goto exit;
 		}
 
 		usb_hal_dpidle_request(USB_DPIDLE_FORBIDDEN);
@@ -3409,7 +3403,6 @@ int usb_enable_clock(bool enable)
 	else
 		count = (count == 0) ? 0 : (count - 1);
 
-	ret = 1;
 exit:
 	if (enable)
 		virt_enable++;
@@ -3421,10 +3414,7 @@ exit:
 	DBG(1, "enable(%d),count(%d), <%d,%d,%d,%d>\n",
 	    enable, count, virt_enable, virt_disable,
 	    real_enable, real_disable);
-
-	/* Return negative if clk enable fail. */
-	return ret ? 1 : -EINVAL;
-
+	return 1;
 }
 EXPORT_SYMBOL(usb_enable_clock);
 #endif
@@ -3728,8 +3718,6 @@ void do_connection_work(struct work_struct *data)
 		/* note this already put SOFTCON */
 		musb_start(mtk_musb);
 		usb_clk_state = OFF_TO_ON;
-		/* Set USB phy mode here. */
-		set_usb_phy_mode(PHY_MODE_USB_DEVICE);
 
 	} else if (mtk_musb->power && (usb_on == false)) {
 		/* disable usb */
@@ -3741,8 +3729,6 @@ void do_connection_work(struct work_struct *data)
 			DBG(0, "lock not active\n");
 		}
 		usb_clk_state = ON_TO_OFF;
-		/* Set USB phy mode to INVALID */
-		set_usb_phy_mode(PHY_MODE_INVALID);
 	} else
 		DBG(0, "do nothing, usb_on:%d, power:%d\n",
 				usb_on, mtk_musb->power);
@@ -4546,7 +4532,6 @@ static int mt_usb_remove(struct platform_device *pdev)
 }
 
 static const struct of_device_id apusb_of_ids[] = {
-	{.compatible = "mediatek,mt6789-usb20",},
 	{.compatible = "mediatek,mt6855-usb20",},
 	{.compatible = "mediatek,mt6833-usb20",},
 	{},

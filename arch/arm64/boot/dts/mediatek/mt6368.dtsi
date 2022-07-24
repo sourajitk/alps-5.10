@@ -34,7 +34,11 @@
 			headset-eint-num = <0>;
 			headset-eint-trig-mode = <1>;
 			headset-key-mode = <0>;
-			headset-three-key-threshold = <0 80 220 400>;
+			//#ifdef OPLUS_ARCH_EXTENDS
+			headset-three-key-threshold = <0 82 170 306>;
+			//#else /* OPLUS_ARCH_EXTENDS */
+			//headset-three-key-threshold = <0 80 220 400>;
+			//#endif /* OPLUS_ARCH_EXTENDS */
 			headset-three-key-threshold-CDD = <0 121 192 600>;
 			headset-four-key-threshold = <0 58 121 192 400>;
 			io-channels = <&mt6368_adc AUXADC_ACCDET>;
@@ -92,13 +96,10 @@
 
 		mt6368codec: mt6368codec {
 			compatible = "mediatek,mt6368-sound";
-			mediatek,dmic-mode = <0>;
-			mediatek,mic-type = <3 3 3>;
 			io-channels = <&mt6368_adc AUXADC_HPOFS_CAL>;
 			io-channel-names = "pmic_hpofs_cal";
 			nvmem = <&mt6368_efuse>;
 			nvmem-names = "pmic-hp-efuse";
-			reg_vaud18-supply = <&mt6368_vaud18>;
 		};
 
 		regulators {

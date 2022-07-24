@@ -5593,7 +5593,6 @@ enum {
 	SUPPLY_SEQ_HP_PULL_DOWN,
 	SUPPLY_SEQ_CLKSQ,
 	SUPPLY_SEQ_ADC_CLKGEN,
-	SUPPLY_SEQ_DEC_CLK,
 	SUPPLY_SEQ_TOP_CK,
 	SUPPLY_SEQ_TOP_CK_LAST,
 	SUPPLY_SEQ_DCC_CLK,
@@ -5902,10 +5901,6 @@ struct mt6368_priv {
 	/* vow dmic low power mode, 1: enable, 0: disable */
 	int vow_dmic_lp;
 	int vow_single_mic_select;
-
-	/* regulator */
-	struct regulator *reg_vaud18;
-
 };
 
 #define MT_SOC_ENUM_EXT_ID(xname, xenum, xhandler_get, xhandler_put, id) \

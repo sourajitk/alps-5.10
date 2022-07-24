@@ -65,7 +65,7 @@ static int margin_mode_gpu_dbnc_a = 9;
 static int margin_mode_gpu_dbnc_b = 1;
 static int JUMP_CHECK_NUM = DEFAULT_JUMP_CHECK_NUM;
 static int JUMP_CHECK_Q_PCT = DEFAULT_JUMP_CHECK_Q_PCT;
-static int adopt_low_fps = 1;
+static int adopt_low_fps = 1;;
 static int condition_get_fps;
 static int condition_fstb_active;
 
@@ -266,8 +266,8 @@ int fpsgo_ctrl2fstb_switch_fstb(int enable)
 			if (psWork) {
 				INIT_WORK(psWork, fstb_base_fps_stats);
 				queue_work(wq2, psWork);
-			}
-		}
+ 			}
+ 		}
 	}
 
 	mutex_unlock(&fstb_lock);
@@ -414,6 +414,7 @@ int switch_fps_range(int nr_level, struct fps_level *level)
 	else
 		return 1;
 }
+
 static struct FSTB_FRAME_INFO *add_new_frame_info(int pid, unsigned long long bufID,
 	int hwui_flag)
 {
@@ -574,7 +575,7 @@ int switch_ui_ctrl(int pid, int set_ctrl)
 				iter->sbe_state, "sbe_state");
 		hlist_add_head(&iter->hlist, &fstb_frame_infos);
 	}
-
+	
 out:
 	mutex_unlock(&fstb_lock);
 
@@ -1127,6 +1128,9 @@ out:
 	}
 	switch (iter->sbe_state) {
 	case -1:
+		eara_fps = -1;
+		tolerence_fps = 0;
+		break;
 	case 0:
 		break;
 	case 1:
@@ -1191,12 +1195,6 @@ static void fstb_calculate_target_fps(int pid, unsigned long long bufID,
 
 	if (iter == NULL)
 		goto out;
-
-	if (!fstb_self_ctrl_fps_enable) {
-		target_fps = iter->target_fps;
-		fpsgo_main_trace("[fstb][%d][0x%llx] | fstb_self_ctrl_fps_enable:%d",
-			iter->pid, iter->bufid, fstb_self_ctrl_fps_enable);
-	}
 
 	if (target_fps <= 0) {
 		fstb_change_tfps(iter, iter->target_fps, 1);
@@ -1273,7 +1271,7 @@ void fpsgo_comp2fstb_prepare_calculate_target_fps(int pid, unsigned long long bu
 	}
 
 	if (iter == NULL || fstb_is_cam_active ||
-		iter->hwui_flag == RENDER_INFO_HWUI_TYPE)
+		iter->hwui_flag == RENDER_INFO_HWUI_TYPE || !fstb_self_ctrl_fps_enable)
 		goto out;
 
 	vpPush =
@@ -1371,13 +1369,20 @@ int fpsgo_fbt2fstb_get_cam_active(void)
 
 static void fstb_set_cam_active(int active)
 {
-	mutex_lock(&fstb_cam_active_time);
 	if (fstb_is_cam_active == active)
-		goto out;
+		return;
 
 	fstb_is_cam_active = active;
 	fpsgo_fstb2xgf_set_camera_flag(fstb_is_cam_active);
-out:
+}
+
+static void fstb_check_cam_status(void)
+{
+	mutex_lock(&fstb_cam_active_time);
+	if (ktime_to_us(ktime_get()) - fstb_cam_active_ts < 1000000LL)
+		fstb_set_cam_active(1);
+	else
+		fstb_set_cam_active(0);
 	mutex_unlock(&fstb_cam_active_time);
 }
 
@@ -1458,6 +1463,7 @@ void fpsgo_comp2fstb_queue_time_update(int pid, unsigned long long bufID,
 	cur_time_us = ktime_to_us(cur_time);
 
 	hlist_for_each_entry(iter, &fstb_frame_infos, hlist) {
+
 		if (iter->pid == pid && (iter->bufid == bufID ||
 				iter->bufid == 0))
 			break;
@@ -1939,10 +1945,8 @@ void fpsgo_fbt2fstb_query_fps(int pid, unsigned long long bufID,
 				default:
 					*target_fps = iter->target_fps;
 					tolerence_fps = iter->target_fps_margin;
-					if (iter->queue_fps >
-						max_fps_limit * fps_bypass_max / 100 ||
-						iter->queue_fps <
-						min_fps_limit * fps_bypass_min / 100)
+					if (iter->queue_fps > max_fps_limit * fps_bypass_max / 100 ||
+						iter->queue_fps < min_fps_limit * fps_bypass_min / 100)
 						*target_fps = -1;
 					break;
 				}
@@ -2208,9 +2212,9 @@ static void fstb_fps_stats(struct work_struct *work)
 		mutex_unlock(&fstb_lock);
 	}
 
+	fstb_check_cam_status();
 
 	//fpsgo_check_thread_status();
-	xgf_trace("fstb_is_cam_active:%d", fstb_is_cam_active);
 	fpsgo_fstb2xgf_do_recycle(fstb_active2xgf);
 	fpsgo_create_render_dep();
 
@@ -2249,35 +2253,6 @@ static void reset_fps_level(void)
 
 	set_soft_fps_level(1, level);
 }
-
-static ssize_t set_cam_active_show(struct kobject *kobj,
-		struct kobj_attribute *attr,
-		char *buf)
-{
-	return scnprintf(buf, PAGE_SIZE, "%d\n", fstb_is_cam_active);
-}
-
-static ssize_t set_cam_active_store(struct kobject *kobj,
-		struct kobj_attribute *attr,
-		const char *buf, size_t count)
-{
-	char acBuffer[FPSGO_SYSFS_MAX_BUFF_SIZE];
-	int arg;
-
-	if ((count > 0) && (count < FPSGO_SYSFS_MAX_BUFF_SIZE)) {
-		if (scnprintf(acBuffer, FPSGO_SYSFS_MAX_BUFF_SIZE, "%s", buf)) {
-			if (kstrtoint(acBuffer, 0, &arg) != 0)
-				goto out;
-			mtk_fstb_dprintk_always("%s %d\n", __func__, arg);
-			fstb_set_cam_active(!!arg);
-		}
-	}
-
-out:
-	return count;
-}
-
-static KOBJ_ATTR_RW(set_cam_active);
 
 static ssize_t set_ui_ctrl_show(struct kobject *kobj,
 		struct kobj_attribute *attr,
@@ -3160,8 +3135,6 @@ int mtk_fstb_init(void)
 		fpsgo_sysfs_create_file(fstb_kobj,
 				&kobj_attr_fstb_fps_bypass_min);
 		fpsgo_sysfs_create_file(fstb_kobj,
-				&kobj_attr_set_cam_active);
-		fpsgo_sysfs_create_file(fstb_kobj,
 				&kobj_attr_tfps_to_powerhal_enable);
 	}
 
@@ -3172,7 +3145,7 @@ int mtk_fstb_init(void)
 		goto err;
 	wq2 = alloc_ordered_workqueue("%s", WQ_MEM_RECLAIM | WQ_HIGHPRI, "mt_fstb_base");
 	if (!wq2)
-		goto err;
+ 		goto err;
 
 	hrtimer_init(&hrt1, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	hrt1.function = &mt_fstb;
@@ -3236,8 +3209,6 @@ int __exit mtk_fstb_exit(void)
 			&kobj_attr_fstb_fps_bypass_max);
 	fpsgo_sysfs_remove_file(fstb_kobj,
 			&kobj_attr_fstb_fps_bypass_min);
-	fpsgo_sysfs_remove_file(fstb_kobj,
-			&kobj_attr_set_cam_active);
 	fpsgo_sysfs_remove_file(fstb_kobj,
 			&kobj_attr_tfps_to_powerhal_enable);
 

@@ -131,11 +131,10 @@ void mml_pq_comp_config_clear(struct mml_task *task)
 
 	mml_pq_log("%s task_job_id[%d] job_id[%llx] dual[%d]",
 		__func__, task->job.jobid, job_id, task->config->dual);
+
 	mutex_lock(&chan->msg_lock);
 	if (atomic_read(&chan->msg_cnt)) {
 		list_for_each_entry_safe(sub_task, tmp, &chan->msg_list, mbox_list) {
-			mml_pq_log("%s msg sub_task[%p] msg_list[%08x] sub_job_id[%llx]",
-				__func__, sub_task, &chan->msg_list, sub_task->job_id);
 			if (sub_task->job_id == job_id) {
 				list_del(&sub_task->mbox_list);
 				atomic_dec_if_positive(&chan->msg_cnt);
@@ -146,8 +145,6 @@ void mml_pq_comp_config_clear(struct mml_task *task)
 		mutex_unlock(&chan->msg_lock);
 		mutex_lock(&chan->job_lock);
 		list_for_each_entry_safe(sub_task, tmp, &chan->job_list, mbox_list) {
-			mml_pq_log("%s job sub_task[%p] job_list[%08x] sub_job_id[%llx]",
-				__func__, sub_task, &chan->job_list, sub_task->job_id);
 			if (sub_task->job_id == job_id)
 				list_del(&sub_task->mbox_list);
 		}
@@ -881,9 +878,8 @@ static struct mml_pq_sub_task *wait_next_sub_task(struct mml_pq_chan *chan)
 		ret = wait_event_interruptible(chan->msg_wq,
 			(atomic_read(&chan->msg_cnt) > 0));
 		if (ret) {
-			if (ret != -ERESTARTSYS)
-				mml_pq_log("%s wakeup wait_result[%d], msg_cnt[%d]",
-					__func__, ret, atomic_read(&chan->msg_cnt));
+			mml_pq_log("%s wakeup wait_result[%d], msg_cnt[%d]",
+				__func__, ret, atomic_read(&chan->msg_cnt));
 			break;
 		}
 
@@ -924,8 +920,7 @@ static void handle_tile_init_result(struct mml_pq_chan *chan,
 	mml_pq_log("%s called, %d", __func__, job->result_job_id);
 	ret = find_sub_task(chan, job->result_job_id, &sub_task);
 	if (unlikely(ret)) {
-		mml_pq_err("finish tile sub_task failed!: %d id: %d", ret,
-			job->result_job_id);
+		mml_pq_err("finish tile sub_task failed!: %d", ret);
 		return;
 	}
 
@@ -1087,8 +1082,7 @@ static void handle_comp_config_result(struct mml_pq_chan *chan,
 	mml_pq_msg("%s called, %d", __func__, job->result_job_id);
 	ret = find_sub_task(chan, job->result_job_id, &sub_task);
 	if (unlikely(ret)) {
-		mml_pq_err("finish comp sub_task failed!: %d id: %d", ret,
-			job->result_job_id);
+		mml_pq_err("finish tile sub_task failed!: %d", ret);
 		return;
 	}
 	mml_pq_msg("%s end %d task=%p sub_task->id[%d]", __func__, ret,
@@ -1752,40 +1746,29 @@ static void ut_init()
 
 static void destroy_ut_task(struct mml_task *task)
 {
-	mml_pq_log("destroy mml_task for PQ UT [%lu.%lu]",
+	mml_pq_msg("destroy mml_task for PQ UT [%lu.%lu]",
 		task->end_time.tv_sec, task->end_time.tv_nsec);
 	list_del(&task->entry);
 	ut_task_cnt--;
-	kfree(task->config);
 	kfree(task);
 }
 
 static int run_ut_task_threaded(void *data)
 {
 	struct mml_task *task = data;
-	struct mml_task *task_check = mml_core_create_task();
 	s32 ret;
 
-	mml_pq_log("start run mml_task for PQ UT [%lu.%lu]\n",
+	pr_notice("start run mml_task for PQ UT [%lu.%lu]\n",
 		task->end_time.tv_sec, task->end_time.tv_nsec);
 
-	if (memcmp(task, task_check, sizeof(struct mml_task)))
-		mml_pq_err("task check error");
-
-	task->config = kzalloc(sizeof(struct mml_frame_config), GFP_KERNEL);
-
-	if (!task->config)
-		goto exit;
-
 	ret = mml_pq_set_tile_init(task);
-	mml_pq_log("tile_init result: %d\n", ret);
+	pr_notice("tile_init result: %d\n", ret);
 
 	ret = mml_pq_get_tile_init_result(task, 100);
-	mml_pq_log("get result: %d\n", ret);
+	pr_notice("get result result: %d\n", ret);
 
 	mml_pq_put_tile_init_result(task);
 
-exit:
 	destroy_ut_task(task);
 	return 0;
 }
@@ -1795,17 +1778,17 @@ static void create_ut_task(const char *case_name)
 	struct mml_task *task = mml_core_create_task();
 	struct task_struct *thr;
 
-	mml_pq_log("start create task for %s\n", case_name);
+	pr_notice("start create task for %s\n", case_name);
 	INIT_LIST_HEAD(&task->entry);
 	ktime_get_ts64(&task->end_time);
 	list_add_tail(&task->entry, &ut_mml_tasks);
 	ut_task_cnt++;
 
-	mml_pq_log("[mml] created mml_task for PQ UT [%lu.%lu]\n",
+	pr_notice("created mml_task for PQ UT [%lu.%lu]\n",
 		task->end_time.tv_sec, task->end_time.tv_nsec);
 	thr = kthread_run(run_ut_task_threaded, task, case_name);
 	if (IS_ERR(thr)) {
-		mml_pq_err("create thread failed, thread:%s\n", case_name);
+		pr_notice("create thread failed, thread:%s\n", case_name);
 		destroy_ut_task(task);
 	}
 }
@@ -1817,21 +1800,21 @@ static s32 ut_set(const char *val, const struct kernel_param *kp)
 	ut_init();
 	result = sscanf(val, "%d", &ut_case);
 	if (result != 1) {
-		mml_pq_err("invalid input: %s, result(%d)\n", val, result);
+		pr_notice("invalid input: %s, result(%d)\n", val, result);
 		return -EINVAL;
 	}
-	mml_pq_log("[mml] %s: case_id=%d\n", __func__, ut_case);
+	pr_notice("%s: case_id=%d\n", __func__, ut_case);
 
 	switch (ut_case) {
 	case 0:
 		create_ut_task("basic_pq");
 		break;
 	default:
-		mml_pq_err("invalid case_id: %d\n", ut_case);
+		pr_notice("invalid case_id: %d\n", ut_case);
 		break;
 	}
 
-	mml_pq_log("%s END\n", __func__);
+	pr_notice("%s END\n", __func__);
 	return 0;
 }
 

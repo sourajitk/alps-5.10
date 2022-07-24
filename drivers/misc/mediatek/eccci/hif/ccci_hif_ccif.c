@@ -1929,7 +1929,7 @@ static int ccif_late_init(unsigned char hif_id)
 	 * request_irq will get a unbalance warning
 	 */
 	ret = request_irq(ccif_ctrl->ap_ccif_irq1_id, md_cd_ccif_isr,
-			ccif_ctrl->ap_ccif_irq1_flags, "CCIF_AP_DATA1",
+			ccif_ctrl->ap_ccif_irq1_flags, "CCIF_AP_DATA",
 			ccif_ctrl);
 	if (ret) {
 		CCCI_ERROR_LOG(ccif_ctrl->md_id, TAG,
@@ -2165,6 +2165,9 @@ static int ccif_hif_hw_init(struct device *dev, struct md_ccif_ctrl *md_ctrl)
 	md_ctrl->ccif_ap_base = of_iomap(node, 0);
 	md_ctrl->ccif_md_base = of_iomap(node, 1);
 
+	md_ctrl->ccif2_ap_base = of_iomap(node, 2);
+	md_ctrl->ccif2_md_base = of_iomap(node, 3);
+
 	md_ctrl->ap_ccif_irq0_id = irq_of_parse_and_map(node, 0);
 	md_ctrl->ap_ccif_irq1_id = irq_of_parse_and_map(node, 1);
 
@@ -2224,12 +2227,16 @@ static int ccif_hif_hw_init(struct device *dev, struct md_ccif_ctrl *md_ctrl)
 		CCCI_ERROR_LOG(-1, TAG,
 			"%s: get ccif-pericfg failed\n", __func__);
 
-	if (!md_ctrl->ccif_ap_base ||
-		!md_ctrl->ccif_md_base) {
+	if (!md_ctrl->ccif_ap_base || !md_ctrl->ccif_md_base) {
 		CCCI_ERROR_LOG(-1, TAG,
 			"ap_ccif_base=NULL or ccif_md_base NULL\n");
 		return -2;
 	}
+
+	if (!md_ctrl->ccif2_ap_base || !md_ctrl->ccif2_md_base)
+		CCCI_ERROR_LOG(-1, TAG,
+			"ccif2_ap_base=NULL or ccif2_md_base NULL\n");
+
 	if (md_ctrl->ap_ccif_irq0_id == 0 ||
 		md_ctrl->ap_ccif_irq1_id == 0) {
 		CCCI_ERROR_LOG(-1, TAG,
@@ -2245,7 +2252,7 @@ static int ccif_hif_hw_init(struct device *dev, struct md_ccif_ctrl *md_ctrl)
 	CCCI_DEBUG_LOG(-1, TAG, "ccif_irq0:%d,ccif_irq1:%d\n",
 		md_ctrl->ap_ccif_irq0_id, md_ctrl->ap_ccif_irq1_id);
 	ret = request_irq(md_ctrl->ap_ccif_irq0_id, md_ccif_isr,
-			md_ctrl->ap_ccif_irq0_flags, "CCIF_AP_DATA0", md_ctrl);
+			md_ctrl->ap_ccif_irq0_flags, "CCIF_AP_DATA", md_ctrl);
 	if (ret) {
 		CCCI_ERROR_LOG(md_ctrl->md_id, TAG,
 			"request CCIF_AP_DATA IRQ0(%d) error %d\n",

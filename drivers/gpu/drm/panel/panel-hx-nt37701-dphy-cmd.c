@@ -29,7 +29,7 @@
 #include "../mediatek/mediatek_v2/mtk_drm_graphics_base.h"
 #endif
 
-static atomic_t current_backlight;
+static char bl_tb0[] = { 0x51, 0xff };
 #define ENABLE_DSC 1
 
 struct lcm {
@@ -121,9 +121,6 @@ static void lcm_dcs_write(struct lcm *ctx, const void *data, size_t len)
 
 static void lcm_panel_init(struct lcm *ctx)
 {
-	char bl_tb[] = {0x51, 0x07, 0xff};
-	unsigned int level = 0;
-
 	ctx->reset_gpio = devm_gpiod_get(ctx->dev, "reset", GPIOD_OUT_HIGH);
 	gpiod_set_value(ctx->reset_gpio, 0);
 	usleep_range(10 * 1000, 15 * 1000);
@@ -211,12 +208,6 @@ static void lcm_panel_init(struct lcm *ctx)
 	//FrameRate 60Hz:0x01  120HZ:0x02
 	/* Frame Rate 60Hz*/
 	lcm_dcs_write_seq_static(ctx, 0x2F, 0x01);
-
-	//backlight
-	level = atomic_read(&current_backlight);
-	bl_tb[1] = (level >> 8) & 0x7;
-	bl_tb[2] = level & 0xFF;
-	lcm_dcs_write(ctx, bl_tb, ARRAY_SIZE(bl_tb));
 
 	/* Sleep Out */
 	lcm_dcs_write_seq_static(ctx, 0x11);
@@ -415,17 +406,17 @@ static int panel_ata_check(struct drm_panel *panel)
 static int lcm_setbacklight_cmdq(void *dsi, dcs_write_gce cb, void *handle,
 				 unsigned int level)
 {
-	char bl_tb[] = {0x51, 0x07, 0xff};
 
-	bl_tb[1] = (level >> 8) & 0x7;
-	bl_tb[2] = level & 0xFF;
+	if (level > 255)
+		level = 255;
+	pr_info("%s backlight = -%d\n", __func__, level);
+	bl_tb0[1] = (u8)level;
+
 	if (!cb)
 		return -1;
-	cb(dsi, handle, bl_tb, ARRAY_SIZE(bl_tb));
-	atomic_set(&current_backlight, level);
-	pr_info("%s %d %d %d\n", __func__, level, bl_tb[1], bl_tb[2]);
-	return 0;
 
+	cb(dsi, handle, bl_tb0, ARRAY_SIZE(bl_tb0));
+	return 0;
 }
 
 static int panel_ext_reset(struct drm_panel *panel, int on)
@@ -618,7 +609,6 @@ static int lcm_probe(struct mipi_dsi_device *dsi)
 			 PTR_ERR(ctx->reset_gpio));
 		return PTR_ERR(ctx->reset_gpio);
 	}
-	atomic_set(&current_backlight, 4095);
 	devm_gpiod_put(dev, ctx->reset_gpio);
 
 	ctx->prepared = true;

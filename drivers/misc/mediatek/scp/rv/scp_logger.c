@@ -219,7 +219,6 @@ exit:
 	return ret;
 }
 
-#if IS_ENABLED(CONFIG_MTK_TINYSYS_SCP_DEBUG_SUPPORT)
 ssize_t scp_A_log_read(char __user *data, size_t len)
 {
 	unsigned int w_pos, r_pos, datalen;
@@ -327,9 +326,6 @@ static unsigned int scp_A_log_if_poll(struct file *file, poll_table *wait)
 
 	return ret;
 }
-#endif
-
-#if IS_ENABLED(CONFIG_MTK_TINYSYS_SCP_DEBUG_SUPPORT)
 /*
  * ipi send to enable scp logger flag
  */
@@ -597,7 +593,6 @@ static ssize_t log_filter_store(struct device *dev,
 	}
 }
 DEVICE_ATTR_WO(log_filter);
-#endif
 
 
 /*
@@ -823,14 +818,12 @@ void scp_logger_uninit(void)
 		vfree(tmp);
 }
 
-#if IS_ENABLED(CONFIG_MTK_TINYSYS_SCP_DEBUG_SUPPORT)
 const struct file_operations scp_A_log_file_ops = {
 	.owner = THIS_MODULE,
 	.read = scp_A_log_if_read,
 	.open = scp_A_log_if_open,
 	.poll = scp_A_log_if_poll,
 };
-#endif
 
 
 /*

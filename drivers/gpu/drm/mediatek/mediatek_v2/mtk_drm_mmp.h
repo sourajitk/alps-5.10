@@ -48,11 +48,12 @@ struct DRM_MMP_Events {
 	mmp_event postmask0;
 	mmp_event abnormal_irq;
 	mmp_event iova_tf;
+	mmp_event mmclk;
 	mmp_event pmqos;
 	mmp_event hrt_bw;
-	mmp_event mutex_lock;
 	mmp_event layering;
 	mmp_event layering_blob;
+	mmp_event mutex_lock;
 	mmp_event dma_alloc;
 	mmp_event dma_free;
 	mmp_event dma_get;
@@ -62,8 +63,6 @@ struct DRM_MMP_Events {
 	mmp_event ion_import_free;
 	mmp_event set_mode;
 	mmp_event top_clk;
-	mmp_event sram_alloc;
-	mmp_event sram_free;
 };
 
 /* if changed, need to update init_crtc_mmp_event() */
@@ -123,9 +122,7 @@ struct CRTC_MMP_Events {
 	mmp_event aal_sof_thread;
 	mmp_event aal_dre30_rw;
 	mmp_event aal_dre20_rh;
-	/*Gamma mmp mark*/
-	mmp_event gamma_ioctl;
-	mmp_event gamma_sof;
+	mmp_event max_hrt_layers;
 };
 
 struct DRM_MMP_Events *get_drm_mmp_events(void);

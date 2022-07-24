@@ -23,7 +23,10 @@
 #else
 #include "mtk-cmdq-ext.h"
 #endif
-
+#if defined(CONFIG_PXLW_IRIS)
+#include "iris_mtk_api.h"
+#include "iris_api.h"
+#endif
 #include "mtk_drm_drv.h"
 #include "mtk_drm_ddp_comp.h"
 #include "mtk_drm_crtc.h"
@@ -33,8 +36,19 @@
 #include "mtk_drm_trace.h"
 
 #define ESD_TRY_CNT 5
-#define ESD_CHECK_PERIOD 2000 /* ms */
-
+//#ifndef OPLUS_FEATURE_ESD
+//#define ESD_CHECK_PERIOD 2000 /* ms */
+//#else
+#define ESD_CHECK_PERIOD 5000 /* ms */
+#define TIMEOUT_MS 20
+extern unsigned int esd_mode;
+extern unsigned int ffl_backlight_backup;
+unsigned long esd_flag = 0;
+EXPORT_SYMBOL(esd_flag);
+//#ifdef OPLUS_FEATURE_ESD
+bool aod_flag = false;
+EXPORT_SYMBOL(aod_flag);
+//#endif
 /* pinctrl implementation */
 long _set_state(struct drm_crtc *crtc, const char *name)
 {
@@ -180,7 +194,9 @@ int _mtk_esd_check_read(struct drm_crtc *crtc)
 		return -EINVAL;
 	}
 
-	cmdq_handle = cmdq_pkt_create(mtk_crtc->gce_obj.client[CLIENT_DSI_CFG]);
+	//#ifdef OPLUS_BUG_STATABILITY
+	cmdq_handle = cmdq_pkt_create(mtk_crtc->gce_obj.client[CLIENT_CFG]);
+	//#endif
 	cmdq_handle->err_cb.cb = esd_cmdq_timeout_cb;
 	cmdq_handle->err_cb.data = crtc;
 
@@ -194,14 +210,18 @@ int _mtk_esd_check_read(struct drm_crtc *crtc)
 			mtk_crtc_wait_frame_done(mtk_crtc, cmdq_handle,
 						 DDP_FIRST_PATH, 0);
 
+		//#ifdef OPLUS_BUG_STATABILITY
 		cmdq_pkt_clear_event(cmdq_handle,
-				     mtk_crtc->gce_obj.event[EVENT_ESD_EOF]);
+				     mtk_crtc->gce_obj.event[EVENT_CABC_EOF]);
+		//#endif
 
 		mtk_ddp_comp_io_cmd(output_comp, cmdq_handle, ESD_CHECK_READ,
 				    (void *)mtk_crtc);
 
+		//#ifdef OPLUS_BUG_STATABILITY
 		cmdq_pkt_set_event(cmdq_handle,
-				   mtk_crtc->gce_obj.event[EVENT_ESD_EOF]);
+				   mtk_crtc->gce_obj.event[EVENT_CABC_EOF]);
+		//#endif
 	} else { /* VDO mode */
 		if (mtk_crtc_with_sub_path(crtc, mtk_crtc->ddp_mode))
 			mtk_crtc_wait_frame_done(mtk_crtc, cmdq_handle,
@@ -238,7 +258,15 @@ int _mtk_esd_check_read(struct drm_crtc *crtc)
 	esd_ctx = mtk_crtc->esd_ctx;
 	esd_ctx->chk_sta = 0;
 
-	cmdq_pkt_flush(cmdq_handle);
+	//#ifndef OPLUS_FEATURE_ESD
+	//cmdq_pkt_flush(cmdq_handle);
+	//#else
+	ret = cmdq_pkt_flush(cmdq_handle);
+	if (ret != 0) {
+		pr_err("%s: error esd read flush process\n", __func__);
+		goto done;
+	}
+	//#endif
 
 	CRTC_MMP_MARK(drm_crtc_index(crtc), esd_check, 2, 4);
 
@@ -254,7 +282,7 @@ int _mtk_esd_check_read(struct drm_crtc *crtc)
 
 			cmdq_pkt_set_event(
 				cmdq_handle2,
-				mtk_crtc->gce_obj.event[EVENT_ESD_EOF]);
+				mtk_crtc->gce_obj.event[EVENT_CABC_EOF]);
 			cmdq_pkt_flush(cmdq_handle2);
 			cmdq_pkt_destroy(cmdq_handle2);
 		}
@@ -402,8 +430,12 @@ static int mtk_drm_esd_check(struct drm_crtc *crtc)
 	}
 
 	/* switch ESD check mode */
-	if (_can_switch_check_mode(crtc, panel_ext) &&
-	    !mtk_crtc_is_frame_trigger_mode(crtc))
+	//#ifndef OPLUS_FEATURE_ESD
+	//if (_can_switch_check_mode(crtc, panel_ext) &&
+	    //!mtk_crtc_is_frame_trigger_mode(crtc))
+	//#else
+	if (_can_switch_check_mode(crtc, panel_ext))
+	//#endif
 		esd_ctx->chk_mode =
 			(esd_ctx->chk_mode == READ_EINT) ? READ_LCM : READ_EINT;
 
@@ -418,7 +450,6 @@ static int mtk_drm_esd_recover(struct drm_crtc *crtc)
 	struct mtk_ddp_comp *output_comp;
 	struct mtk_drm_private *priv = mtk_crtc->base.dev->dev_private;
 	int ret = 0;
-	struct cmdq_pkt *cmdq_handle = NULL;
 
 	CRTC_MMP_EVENT_START(drm_crtc_index(crtc), esd_recovery, 0, 0);
 	if (crtc->state && !crtc->state->active) {
@@ -435,13 +466,7 @@ static int mtk_drm_esd_recover(struct drm_crtc *crtc)
 	}
 	mtk_drm_idlemgr_kick(__func__, &mtk_crtc->base, 0);
 
-	if (mtk_crtc->is_mml) {
-		mtk_crtc_pkt_create(&cmdq_handle, crtc, mtk_crtc->gce_obj.client[CLIENT_CFG]);
-		mtk_crtc_mml_racing_stop_sync(crtc, cmdq_handle);
-		/* flush cmdq with stop_vdo_mode before it set DSI_START to 0 */
-	}
-
-	mtk_ddp_comp_io_cmd(output_comp, cmdq_handle, CONNECTOR_PANEL_DISABLE, NULL);
+	mtk_ddp_comp_io_cmd(output_comp, NULL, CONNECTOR_PANEL_DISABLE, NULL);
 
 	mtk_drm_crtc_disable(crtc, true);
 	CRTC_MMP_MARK(drm_crtc_index(crtc), esd_recovery, 0, 2);
@@ -455,9 +480,6 @@ static int mtk_drm_esd_recover(struct drm_crtc *crtc)
 
 	mtk_drm_crtc_enable(crtc);
 	CRTC_MMP_MARK(drm_crtc_index(crtc), esd_recovery, 0, 3);
-
-	if (mtk_crtc->is_mml)
-		mtk_crtc_mml_racing_resubmit(crtc, NULL);
 
 	mtk_ddp_comp_io_cmd(output_comp, NULL, CONNECTOR_PANEL_ENABLE, NULL);
 
@@ -510,18 +532,36 @@ static int mtk_drm_esd_check_worker_kthread(void *data)
 
 	while (1) {
 		msleep(ESD_CHECK_PERIOD);
-		if (esd_ctx->chk_en == 0)
-			continue;
-		ret = wait_event_interruptible(
+		//#ifndef OPLUS_FEATURE_ESD
+		/*ret = wait_event_interruptible(
 			esd_ctx->check_task_wq,
 			atomic_read(&esd_ctx->check_wakeup) &&
 			(atomic_read(&esd_ctx->target_time) ||
-				esd_ctx->chk_mode == READ_EINT));
+			(panel_ext->params->cust_esd_check == 0) &&
+			 (esd_ctx->chk_mode == READ_EINT)));*/
+		//#else
+		ret = wait_event_interruptible_timeout(
+			esd_ctx->check_task_wq,
+			atomic_read(&esd_ctx->check_wakeup) &&
+			(atomic_read(&esd_ctx->target_time) ||
+				esd_ctx->chk_mode == READ_EINT), msecs_to_jiffies(TIMEOUT_MS));
+		//#endif
+
+		//#ifndef OPLUS_BUG_STABILITY
+		//if (ret < 0) {
+		//#else
 		if (ret < 0) {
+		//#endif
 			DDPINFO("[ESD]check thread waked up accidently\n");
 			continue;
 		}
 
+//#ifdef OPLUS_FEATURE_ESD
+		if (aod_flag) {
+			DDPINFO("[ESD]SYQ check thread waked up accidently\n");
+			continue;
+		}
+//#endif
 		mutex_lock(&private->commit.lock);
 		DDP_MUTEX_LOCK(&mtk_crtc->lock, __func__, __LINE__);
 		mtk_drm_trace_begin("esd");
@@ -538,14 +578,28 @@ static int mtk_drm_esd_check_worker_kthread(void *data)
 		i = 0; /* repeat */
 		do {
 			ret = mtk_drm_esd_check(crtc);
-
-			if (!ret) /* success */
+			//#ifndef OPLUS_FEATURE_ESD
+			//if (!ret) /* success */
+				//break;
+			//#else
+			if (!esd_mode && !ret) /* success */
 				break;
-
+			esd_flag = 1;
+			//#endif
 			DDPPR_ERR(
 				"[ESD]esd check fail, will do esd recovery. try=%d\n",
 				i);
 			mtk_drm_esd_recover(crtc);
+#if defined(CONFIG_PXLW_IRIS)
+			DDPINFO("%s notify esd recovery\n", __func__);
+			atomic_set(&private->idle_need_repaint, 1);
+			drm_trigger_repaint(DRM_REPAINT_FOR_ESD, crtc->dev);
+#endif
+			msleep(2000);
+			//#ifdef OPLUS_FEATURE_ESD
+			esd_mode = 0;
+			esd_flag = 0;
+			//#endif
 			recovery_flg = 1;
 		} while (++i < ESD_TRY_CNT);
 

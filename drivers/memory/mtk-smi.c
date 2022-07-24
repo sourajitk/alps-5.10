@@ -69,6 +69,7 @@
 #define SMI_LARB_WRR_PORTx(id)		(SMI_LARB_WRR_PORT + ((id) << 2))
 #define SMI_LARB_DISABLE_ULTRA		0x70
 #define SMI_LARB_FORCE_ULTRA		0x78
+#define SMI_LARB_FORCE_PREULTRA		0x7c
 
 /* mt6893 */
 #define SMI_LARB_VC_PRI_MODE		(0x20)
@@ -78,6 +79,7 @@
 #define SMI_LARB_OSTD_MON_PORT(p)	(0x280 + ((p) << 2))
 #define INT_SMI_LARB_OSTD_MON_PORT(p)	(0x500 + SMI_LARB_OSTD_MON_PORT(p))
 #define INT_SMI_LARB_OSTDL_PORTx(id)	(0x500 + SMI_LARB_OSTDL_PORT + ((id) << 2))
+#define INT_SMI_LARB_FORCE_PREULTRA	(0x500 + (SMI_LARB_FORCE_PREULTRA))
 #define SMI_LARB_STAT			(0x0)
 /* SMI COMMON */
 #define SMI_BUS_SEL			0x220
@@ -167,6 +169,7 @@ struct mtk_smi_larb { /* larb: local arbiter */
 	const struct mtk_smi_larb_gen	*larb_gen;
 	int				larbid;
 	int				comm_port_id[LARB_MAX_COMMON];
+	int				suspend_check_port[LARB_MAX_COMMON];
 	u32				*mmu;
 
 	unsigned char			*bank;
@@ -176,7 +179,7 @@ struct mtk_smi_larb { /* larb: local arbiter */
 #define MAX_LARB_FOR_CLAMP		(6)
 #define RESET_CELL_NUM			(2)
 #define MAX_PD_CHECK_DEV_NUM	(2)
-#define SMI_OSTD_CNT_MASK	(0x1FFE000)
+#define SMI_OSTD_CNT_MASK	(0x7FFE000)
 
 struct mtk_smi_pd_log {
 	u8 power_status;
@@ -372,26 +375,6 @@ static void mtk_smi_clk_disable(const struct mtk_smi *smi)
 	clk_disable_unprepare(smi->clk_smi);
 	clk_disable_unprepare(smi->clk_apb);
 }
-
-int mtk_smi_larb_ultra_dis(struct device *larbdev, bool is_dis)
-{
-	struct mtk_smi_larb *larb;
-	u32 val;
-
-	if (unlikely(!larbdev))
-		return -EINVAL;
-	larb = dev_get_drvdata(larbdev);
-
-	if (unlikely(!larb))
-		return -ENODEV;
-
-	val = is_dis ? 0xffffffff : 0x0;
-	writel(val, larb->base + SMI_LARB_DISABLE_ULTRA);
-	pr_info("[SMI]larb:%d set dis_ultra:%d\n", larb->larbid, is_dis);
-
-	return 0;
-}
-EXPORT_SYMBOL_GPL(mtk_smi_larb_ultra_dis);
 
 int mtk_smi_larb_get(struct device *larbdev)
 {
@@ -1022,8 +1005,8 @@ mtk_smi_larb_mt6855_bw_thrt_en[MTK_LARB_NR_MAX][2] = {
 
 static u8
 mtk_smi_larb_mt6855_bwl[MTK_LARB_NR_MAX][SMI_LARB_PORT_NR_MAX] = {
-	{0x2, 0x40, 0x4, 0xa, 0x26,}, /* LARB0 */
-	{0x2, 0x20, 0x2, 0xa, 0x26,}, /* LARB1 */
+	{0x2, 0x40, 0x4, 0xa, 0x1,}, /* LARB0 */
+	{0x2, 0x20, 0x2, 0xa, 0x1,}, /* LARB1 */
 	{0x2, 0x4, 0x4, 0x1,}, /* LARB2 */
 	{}, /* LARB3 */
 	{0x2f, 0x1, 0xc, 0x1, 0x1, 0x1, 0x1, 0x2, 0x2, 0x5, 0x1,
@@ -1310,32 +1293,32 @@ mtk_smi_larb_mt6879_misc[MTK_LARB_NR_MAX][SMI_LARB_MISC_NR] = {
 	 {SMI_LARB_SW_FLAG, 0x1},},
 	{},
 	{{SMI_LARB_CMD_THRT_CON, 0x370256}, {INT_SMI_LARB_CMD_THRT_CON, 0x370256},
-	 {SMI_LARB_SW_FLAG, 0x1}, {SMI_LARB_DISABLE_ULTRA, 0xffffffff},},
+	 {SMI_LARB_SW_FLAG, 0x1},},
 	{{SMI_LARB_CMD_THRT_CON, 0x370256}, {INT_SMI_LARB_CMD_THRT_CON, 0x370256},
-	 {SMI_LARB_SW_FLAG, 0x1}, {SMI_LARB_DISABLE_ULTRA, 0xffffffff},},
-	{{SMI_LARB_CMD_THRT_CON, 0x370256}, {INT_SMI_LARB_CMD_THRT_CON, 0x370256},
-	 {SMI_LARB_SW_FLAG, 0x1}, {SMI_LARB_DISABLE_ULTRA, 0xffffffff},},
-	{{SMI_LARB_CMD_THRT_CON, 0x370256}, {INT_SMI_LARB_CMD_THRT_CON, 0x370256},
-	 {SMI_LARB_SW_FLAG, 0x1}, {SMI_LARB_DISABLE_ULTRA, 0xffffffff},},
+	 {SMI_LARB_SW_FLAG, 0x1},},
 	{{SMI_LARB_CMD_THRT_CON, 0x370256}, {INT_SMI_LARB_CMD_THRT_CON, 0x370256},
 	 {SMI_LARB_SW_FLAG, 0x1},},
 	{{SMI_LARB_CMD_THRT_CON, 0x370256}, {INT_SMI_LARB_CMD_THRT_CON, 0x370256},
 	 {SMI_LARB_SW_FLAG, 0x1},},
 	{{SMI_LARB_CMD_THRT_CON, 0x370256}, {INT_SMI_LARB_CMD_THRT_CON, 0x370256},
-	 {SMI_LARB_SW_FLAG, 0x1}, {SMI_LARB_DISABLE_ULTRA, 0xffffffff},},
+	 {SMI_LARB_SW_FLAG, 0x1},},
+	{{SMI_LARB_CMD_THRT_CON, 0x370256}, {INT_SMI_LARB_CMD_THRT_CON, 0x370256},
+	 {SMI_LARB_SW_FLAG, 0x1},},
 	{{SMI_LARB_CMD_THRT_CON, 0x370256}, {INT_SMI_LARB_CMD_THRT_CON, 0x370256},
 	 {SMI_LARB_SW_FLAG, 0x1},},
 	{{SMI_LARB_CMD_THRT_CON, 0x370256}, {INT_SMI_LARB_CMD_THRT_CON, 0x370256},
 	 {SMI_LARB_SW_FLAG, 0x1},},
-	{},
 	{{SMI_LARB_CMD_THRT_CON, 0x370256}, {INT_SMI_LARB_CMD_THRT_CON, 0x370256},
 	 {SMI_LARB_SW_FLAG, 0x1},},
 	{},
+	{{SMI_LARB_CMD_THRT_CON, 0x370256}, {INT_SMI_LARB_CMD_THRT_CON, 0x370256},
+	 {SMI_LARB_SW_FLAG, 0x1},},
+	{},
 	{},
 	{{SMI_LARB_CMD_THRT_CON, 0x370256}, {INT_SMI_LARB_CMD_THRT_CON, 0x370256},
-	 {SMI_LARB_SW_FLAG, 0x1}, {SMI_LARB_DISABLE_ULTRA, 0xffffffff},},
+	 {SMI_LARB_SW_FLAG, 0x1},},
 	{{SMI_LARB_CMD_THRT_CON, 0x370256}, {INT_SMI_LARB_CMD_THRT_CON, 0x370256},
-	 {SMI_LARB_SW_FLAG, 0x1}, {SMI_LARB_DISABLE_ULTRA, 0xffffffff},},
+	 {SMI_LARB_SW_FLAG, 0x1},},
 	{},
 	{{SMI_LARB_CMD_THRT_CON, 0x370256}, {INT_SMI_LARB_CMD_THRT_CON, 0x370256},
 	 {SMI_LARB_SW_FLAG, 0x1},},
@@ -1367,9 +1350,11 @@ mtk_smi_larb_mt6895_misc[MTK_LARB_NR_MAX][SMI_LARB_MISC_NR] = {
 	{{SMI_LARB_CMD_THRT_CON, 0x370256}, {INT_SMI_LARB_CMD_THRT_CON, 0x370256},
 	 {SMI_LARB_SW_FLAG, 0x1},},
 	{{SMI_LARB_CMD_THRT_CON, 0x370256}, {INT_SMI_LARB_CMD_THRT_CON, 0x370256},
-	 {SMI_LARB_SW_FLAG, 0x1},},
+	 {SMI_LARB_SW_FLAG, 0x1},  {SMI_LARB_FORCE_PREULTRA, 0xffffffff},
+	 {INT_SMI_LARB_FORCE_PREULTRA, 0xffffffff},},
 	{{SMI_LARB_CMD_THRT_CON, 0x370256}, {INT_SMI_LARB_CMD_THRT_CON, 0x370256},
-	 {SMI_LARB_SW_FLAG, 0x1},},
+	 {SMI_LARB_SW_FLAG, 0x1},  {SMI_LARB_FORCE_PREULTRA, 0xffffffff},
+	 {INT_SMI_LARB_FORCE_PREULTRA, 0xffffffff},},
 	{{SMI_LARB_CMD_THRT_CON, 0x370256}, {INT_SMI_LARB_CMD_THRT_CON, 0x370256},
 	 {SMI_LARB_SW_FLAG, 0x1}, {SMI_LARB_DISABLE_ULTRA, 0xffffffff},},
 	{{SMI_LARB_CMD_THRT_CON, 0x370256}, {INT_SMI_LARB_CMD_THRT_CON, 0x370256},
@@ -1765,6 +1750,9 @@ static int mtk_smi_larb_probe(struct platform_device *pdev)
 		larb->comm_port_id[i] = -1;
 		of_property_read_u32_index(dev->of_node, "mediatek,comm-port-id",
 						i, &larb->comm_port_id[i]);
+
+		of_property_read_u32_index(dev->of_node, "mediatek,suspend-check-port",
+						i, &larb->suspend_check_port[i]);
 	}
 
 
@@ -1879,14 +1867,14 @@ static u32 mtk_smi_common_ostd_check(struct mtk_smi *common,
 	for (i = 0; i < SMI_COMMON_LARB_NR_MAX; i++) {
 		if ((check_port >> i) & 1) {
 			val = readl_relaxed(common->base + SMI_DEBUG_S(i));
-			pr_notice("[SMI] common%d: %#x=%#x, power status = %d\n",
-				common->commid, SMI_DEBUG_S(i), val, flags);
+			//pr_notice("[SMI] common%d: %#x=%#x, power status = %d\n",
+			//	common->commid, SMI_DEBUG_S(i), val, flags);
 			if (val & SMI_OSTD_CNT_MASK) {
 				pr_notice("[SMI] common%d suspend check fail, power status = %d\n",
 					common->commid, flags);
 				raw_notifier_call_chain(&smi_driver_notifier_list,
 					common->commid, NULL);
-				ret = ret | (1 >> i);
+				ret = ret | (1 << i);
 			}
 		}
 	}
@@ -1991,7 +1979,8 @@ static int __maybe_unused mtk_smi_larb_suspend(struct device *dev)
 {
 	struct mtk_smi_larb *larb = dev_get_drvdata(dev);
 	const struct mtk_smi_larb_gen *larb_gen = larb->larb_gen;
-	int i;
+	int i, ret;
+	struct mtk_smi *common;
 
 	atomic_dec(&larb->smi.ref_count);
 	if (log_level & 1 << log_config_bit)
@@ -2005,6 +1994,15 @@ static int __maybe_unused mtk_smi_larb_suspend(struct device *dev)
 	if (readl_relaxed(larb->base + SMI_LARB_STAT)) {
 		pr_notice("[SMI]larb:%d, suspend but busy\n", larb->larbid);
 		raw_notifier_call_chain(&smi_driver_notifier_list, larb->larbid, larb);
+	}
+
+	for (i = 0; i < LARB_MAX_COMMON; i++) {
+		if (!larb->smi_common_dev[i] || !larb->suspend_check_port[i])
+			break;
+		common = dev_get_drvdata(larb->smi_common_dev[i]);
+		ret = mtk_smi_common_ostd_check(common, larb->suspend_check_port[i], 0xf);
+		if (ret)
+			raw_notifier_call_chain(&smi_driver_notifier_list, larb->larbid, larb);
 	}
 
 	if (larb_gen->sleep_ctrl)
@@ -2307,7 +2305,7 @@ mtk_smi_common_mt6895_misc[MTK_COMMON_NR_MAX][SMI_COMMON_MISC_NR] = {
 	{{SMI_L1LEN, 0xb}, {SMI_BUS_SEL, 0x4405}, {SMI_M4U_TH, 0xe100e10},
 	{SMI_FIFO_TH1, 0x506090a}, {SMI_FIFO_TH2, 0x506090a}, {SMI_DCM, 0x4f1},
 	{SMI_DUMMY, 0x1},}, /* SMI_MDP_COMMON */
-	{{SMI_L1LEN, 0x2}, {SMI_BUS_SEL, 0x4444}, {SMI_DCM, 0x4f1},
+	{{SMI_L1LEN, 0x2}, {SMI_BUS_SEL, 0x5444}, {SMI_DCM, 0x4f1},
 	{SMI_DUMMY, 0x1},},/* SMI_SYSRAM_COMMON */
 	{{SMI_L1LEN, 0xa}, {SMI_PREULTRA_MASK1, 0x2105}, {SMI_DCM, 0x4f1},
 	{SMI_DUMMY, 0x1},},/* SMI_DISP_SUB_COMMON0 */
@@ -2318,7 +2316,7 @@ mtk_smi_common_mt6895_misc[MTK_COMMON_NR_MAX][SMI_COMMON_MISC_NR] = {
 	{{SMI_L1LEN, 0xa}, {SMI_PREULTRA_MASK1, 0x2105}, {SMI_DCM, 0x4f1},
 	{SMI_DUMMY, 0x1},},/* SMI_MDP_SUB_COMMON1 */
 	{{SMI_L1LEN, 0xa}, {SMI_PREULTRA_MASK1, 0x2105}, {SMI_DCM, 0x4f1},
-	{SMI_DUMMY, 0x1},},/* SMI_SYS_SUB_COMMON2 */
+	{SMI_DUMMY, 0x1}, {SMI_CLAMP_EN_SET, 0x1},},/* SMI_SYS_SUB_COMMON2 */
 	{{SMI_L1LEN, 0xa}, {SMI_PREULTRA_MASK1, 0x2105}, {SMI_DCM, 0x4f1},
 	{SMI_DUMMY, 0x1},},/* SMI_SYS_SUB_COMMON3 */
 	{{SMI_L1LEN, 0xa}, {SMI_PREULTRA_MASK1, 0x2105}, {SMI_DCM, 0x4f1},
@@ -2721,12 +2719,6 @@ static int __maybe_unused mtk_smi_common_suspend(struct device *dev)
 
 	mtk_smi_clk_disable(common);
 	atomic_dec(&common->ref_count);
-
-	if (atomic_read(&common->ref_count)) {
-		dev_notice(dev, "Error: comm(%d) ref count=%d on suspend\n",
-			common->commid, atomic_read(&common->ref_count));
-	}
-
 	return 0;
 }
 

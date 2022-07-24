@@ -31,7 +31,7 @@
 #endif
 #include "tee_impl/tee_ops.h"
 #include "tee_impl/tee_regions.h"
-#include "../iommu/iommu_pseudo.h"
+
 
 #define TEE_CMD_LOCK() mutex_lock(&tee_lock)
 #define TEE_CMD_UNLOCK() mutex_unlock(&tee_lock)
@@ -93,7 +93,6 @@ int tee_directly_invoke_cmd(struct trusted_driver_cmd_params *invoke_params)
 	IS_ENABLED(CONFIG_MICROTRUST_TEE_SUPPORT)
 int secmem_fr_set_svp_region(u64 pa, u32 size, int remote_region_type)
 {
-	int ret = 0;
 	struct trusted_driver_cmd_params cmd_params = {0};
 
 	cmd_params.cmd = CMD_SEC_MEM_SET_SVP_REGION;
@@ -111,11 +110,7 @@ int secmem_fr_set_svp_region(u64 pa, u32 size, int remote_region_type)
 	}
 #endif
 
-	ret = tee_directly_invoke_cmd(&cmd_params);
-
-	mtk_iommu_sec_init(SEC_ID_SVP);
-
-	return ret;
+	return tee_directly_invoke_cmd(&cmd_params);
 }
 
 int secmem_fr_set_wfd_region(u64 pa, u32 size, int remote_region_type)

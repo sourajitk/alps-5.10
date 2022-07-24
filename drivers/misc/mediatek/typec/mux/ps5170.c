@@ -299,11 +299,6 @@ static int ps5170_mux_set(struct typec_mux *mux, struct typec_mux_state *state)
 	 *dev_info(ps->dev, "B data-> active : %d\n", data->ama_dp_state.active);
 	 */
 
-	if (data == NULL) {
-		dev_info(ps->dev, "%s data is NULL, reject.\n", __func__);
-		return 0;
-	}
-
 	/* ama_dp_state */
 	ps->dp_data.ama_dp_state.polarity  = data->ama_dp_state.polarity;
 	ps->dp_data.ama_dp_state.signal = data->ama_dp_state.signal;
@@ -412,7 +407,6 @@ static int ps5170_probe(struct i2c_client *client)
 #else
 		mtk_typec_switch_unregister(ps->sw);
 #endif
-		return ret;
 	}
 
 	INIT_WORK(&ps->set_usb_work, ps5170_switch_set_work);

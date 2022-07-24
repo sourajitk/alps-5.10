@@ -11,7 +11,6 @@
 #include <linux/dma-iommu.h>
 #include <linux/pm_runtime.h>
 #include <linux/remoteproc.h>
-#include <soc/mediatek/smi.h>
 
 #include "iommu_debug.h"
 #ifdef WPE_TF_DUMP_71_1
@@ -188,8 +187,6 @@ int imgsys_wpe_tfault_callback(int port,
 		pr_info("%s: TF port doesn't belongs to WPE.\n\n", __func__, port);
 		return 0;
 	};
-
-	mtk_smi_dbg_hang_detect("WPE");
 
 	/* iomap registers */
 	wpeRegBA = gWpeRegBA[engine - REG_MAP_E_WPE_EIS];
@@ -610,7 +607,6 @@ void imgsys_wpe_debug_dump(struct mtk_imgsys_dev *imgsys_dev,
 			imgsys_wpe_debug_ufo_dump(imgsys_dev, wpeRegBA);
 			imgsys_wpe_debug_ufo_dump(imgsys_dev, wpeRegBA); //twice
 		}
-
 	}
 	//
 	dev_dbg(imgsys_dev->dev, "%s: -\n", __func__);

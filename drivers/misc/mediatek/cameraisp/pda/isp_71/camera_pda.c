@@ -1613,7 +1613,7 @@ static irqreturn_t pda_irqhandle(signed int Irq, void *DeviceId)
 		// read pda status
 		nPdaStatus = PDA_RD32(PDA_devs[0].m_pda_base + PDA_PDA_ERR_STAT_REG) &
 			PDA_STATUS_REG;
-	}
+        }
 
 #ifdef FOR_DEBUG
 	LOG_INF("PDA0 PDA_PDA_ERR_STAT_REG = 0x%x", nPdaStatus);
@@ -1649,7 +1649,7 @@ static irqreturn_t pda2_irqhandle(signed int Irq, void *DeviceId)
 		// read pda status
 		nPdaStatus = PDA_RD32(PDA_devs[1].m_pda_base + PDA_PDA_ERR_STAT_REG) &
 			PDA_STATUS_REG;
-	}
+        }
 
 #ifdef FOR_DEBUG
 	LOG_INF("PDA1 PDA_PDA_ERR_STAT_REG = 0x%x", nPdaStatus);

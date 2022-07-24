@@ -19,21 +19,20 @@
 #include <linux/mailbox/mtk-cmdq-mailbox-ext.h>
 #include <linux/mailbox_client.h>
 #include <linux/soc/mediatek/mtk-cmdq-ext.h>
+#include <linux/soc/mediatek/mtk-cmdq-ext.h>
 #include <linux/types.h>
 #include <linux/time.h>
 #include <linux/workqueue.h>
 #include <mtk-interconnect.h>
 #include <cmdq-util.h>
-
 #include "mtk-mml.h"
 #include "mtk-mml-buf.h"
 #include "mtk-mml-driver.h"
-#include "mtk-mml-drm.h"
 #include "mtk-mml-pq.h"
 
 extern int mtk_mml_msg;
+
 extern int mml_cmdq_err;
-extern int mml_qos_log;
 
 #define mml_msg(fmt, args...) \
 do { \
@@ -53,12 +52,6 @@ do { \
 	pr_notice("[mml][err]" fmt "\n", ##args); \
 	if (mml_cmdq_err) \
 		cmdq_util_error_save("[mml]"fmt"\n", ##args); \
-} while (0)
-
-#define mml_msg_qos(fmt, args...) \
-do { \
-	if (mml_qos_log) \
-		pr_notice("[mml]" fmt "\n", ##args); \
 } while (0)
 
 /* mml ftrace */
@@ -238,8 +231,8 @@ struct mml_topology_cache {
 };
 
 struct mml_comp_config {
-	const struct mml_path_node *node;
 	u8 pipe;
+	const struct mml_path_node *node;
 	u8 tile_eng_idx;
 
 	/* The component private data. Components can store list of labels or
@@ -249,24 +242,20 @@ struct mml_comp_config {
 };
 
 struct mml_pipe_cache {
-	/* command reuse */
 	u32 label_cnt;
+
+	/* Fillin when core call prepare. Use in prepare and make command */
+	struct mml_comp_config cfg[MML_MAX_PATH_NODES];
 
 	/* qos part */
 	u32 total_datasize;
 	u32 max_pixel;
-
-	/* Set in core and comp prepare. Used in tile prepare and make command */
-	struct mml_comp_config cfg[MML_MAX_PATH_NODES];
 };
 
 struct mml_frame_config {
 	struct list_head entry;
 	struct mml_frame_info info;
-	/* frame output pixel size */
 	struct mml_frame_size frame_out[MML_MAX_OUTPUTS];
-	/* direct-link output rect */
-	struct mml_rect dl_out[MML_DL_OUT_CNT];
 	struct list_head tasks;
 	struct list_head await_tasks;
 	struct list_head done_tasks;
@@ -276,11 +265,6 @@ struct mml_frame_config {
 	/* mutex to join operations of task pipes, like buffer flush */
 	struct mutex pipe_mutex;
 	struct kref ref;
-
-	/* see more detail in frame_calc_layer_hrt */
-	u16 layer_w;
-	u16 layer_h;
-	u32 disp_hrt;
 
 	/* display parameter */
 	bool disp_dual;
@@ -358,24 +342,9 @@ enum mml_task_state {
 	MML_TASK_IDLE
 };
 
-struct mml_reuse_offset {
-	u16 label_idx;
-	u16 offset;
-	u16 cnt;
-};
-
-struct mml_reuse_array {
-	struct mml_reuse_offset *offs;
-	u16 idx;
-	u16 offs_size;
-};
-
-/* same as CMDQ_NUM_CMD(CMDQ_CMD_BUFFER_SIZE) */
-#define MML_REUSE_OFFSET_MAX	480
-
 struct mml_task_reuse {
 	struct cmdq_reuse *labels;
-	u16 label_idx;
+	u32 label_idx;
 };
 
 /* pipe info for mml_task */
@@ -560,8 +529,6 @@ struct mml_tile_output {
 	u16 h_tile_cnt;
 	/* total vertical tile number */
 	u16 v_tile_cnt;
-	/* source crop with tile overhead */
-	struct mml_rect src_crop;
 	struct mml_tile_config *tiles;
 };
 
@@ -705,9 +672,6 @@ void mml_core_submit_task(struct mml_frame_config *cfg, struct mml_task *task);
  */
 void mml_core_stop_racing(struct mml_frame_config *cfg, bool force);
 
-
-void add_reuse_label(struct mml_task_reuse *reuse, u16 *label_idx, u32 value);
-
 /* mml_assign - assign to reg_idx with value. Cache the label of this
  * instruction to mml_pipe_cache and record its entry into label_array.
  *
@@ -753,14 +717,6 @@ s32 mml_write(struct cmdq_pkt *pkt, dma_addr_t addr, u32 value, u32 mask,
  * @value:	value to be update
  */
 void mml_update(struct mml_task_reuse *reuse, u16 label_idx, u32 value);
-
-s32 mml_write_array(struct cmdq_pkt *pkt, dma_addr_t addr, u32 value, u32 mask,
-	struct mml_task_reuse *reuse, struct mml_pipe_cache *cache,
-	struct mml_reuse_array *reuses);
-
-void mml_update_array(struct mml_task_reuse *reuse,
-	struct mml_reuse_array *reuses, u32 reuse_idx, u32 off_idx, u32 value);
-
 
 int tracing_mark_write(char *fmt, ...);
 

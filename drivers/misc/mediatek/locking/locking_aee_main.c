@@ -35,7 +35,6 @@ static const char * const critical_lock_list[] = {
 	"&(&port->lock)->rlock",
 	/* try_to_wake_up */
 	"&p->pi_lock",
-	"&sg_policy->update_lock",
 };
 
 static int is_critical_lock_held(void)
@@ -133,6 +132,14 @@ static void ldt_disable_aee(void)
 
 static int __init locking_aee_init(void)
 {
+	int ret;
+
+	ret = register_kretprobe(&debug_locks_off_kretprobe);
+	if (ret < 0)
+		pr_info("register debug_locks_off kretprobe failed, returned %d\n", ret);
+	else
+		pr_info("register debug_locks_off kretprobe succeeded.\n");
+
 	monitor_hang_regist_ldt(ldt_disable_aee);
 	kthread_run(locking_aee_thread, NULL, "locking_aee");
 	lockdep_test_init();

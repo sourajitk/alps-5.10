@@ -31,6 +31,20 @@
 #define MTK_FILL_MIPI_IMPEDANCE
 #endif
 
+
+//#ifdef OPLUS_FEATURE_ONSCREENFINGERPRINT
+/*
+* add for fingerprint notify frigger
+*/
+#define MTK_ONSCREENFINGERPRINT_EVENT 20
+//#endif
+
+#if defined(CONFIG_PXLW_IRIS)
+/* #define MTK_DRM_LOCKTIME_CHECK */
+#else
+#define MTK_DRM_LOCKTIME_CHECK
+#endif
+
 struct device;
 struct device_node;
 struct drm_crtc;
@@ -99,6 +113,7 @@ struct mtk_drm_private {
 	enum MTK_DRM_SESSION_MODE session_mode;
 	atomic_t crtc_present[MAX_CRTC];
 	atomic_t crtc_sf_present[MAX_CRTC];
+	atomic_t crtc_rel_present[MAX_CRTC];
 
 	struct device_node *mutex_node;
 	struct device *mutex_dev;
@@ -175,11 +190,22 @@ struct mtk_drm_private {
 	bool dma_parms_allocated;
 
 	bool already_first_config;
+//#ifdef OPLUS_ADFR
+	struct workqueue_struct *fakeframe_wq;
+	struct hrtimer fakeframe_timer;
+	struct work_struct fakeframe_work;
+	/* add for mux switch control */
+	struct completion switch_te_gate;
+	bool vsync_switch_pending;
+	bool need_vsync_switch;
+	struct workqueue_struct *vsync_switch_wq;
+	struct work_struct vsync_switch_work;
+//endif
 
 	struct mml_drm_ctx *mml_ctx;
 	atomic_t mml_job_done;
 	wait_queue_head_t signal_mml_job_done_wq;
-
+	unsigned int *dummy_table_backup;
 	unsigned int seg_id;
 };
 
@@ -233,38 +259,6 @@ enum DISP_SEC_SIGNAL {
 	DISP_SEC_STOP,
 	DISP_SEC_ENABLE,
 	DISP_SEC_DISABLE,
-};
-
-static const struct mtk_addon_module_data addon_rsz_data[] = {
-	{DISP_RSZ, ADDON_BETWEEN, DDP_COMPONENT_OVL0_2L},
-};
-
-static const struct mtk_addon_module_data addon_rsz_data_v2[] = {
-	{DISP_RSZ_v2, ADDON_BETWEEN, DDP_COMPONENT_OVL0_2L},
-};
-
-static const struct mtk_addon_module_data addon_rsz_data_v3[] = {
-	{DISP_RSZ_v3, ADDON_BETWEEN, DDP_COMPONENT_OVL1_2L},
-};
-
-static const struct mtk_addon_module_data addon_rsz_data_v4[] = {
-	{DISP_RSZ_v4, ADDON_BETWEEN, DDP_COMPONENT_OVL2_2L},
-};
-
-static const struct mtk_addon_module_data addon_rsz_data_v5[] = {
-	{DISP_RSZ_v5, ADDON_BETWEEN, DDP_COMPONENT_OVL1_2L},
-};
-
-static const struct mtk_addon_module_data addon_rsz_data_v6[] = {
-	{DISP_RSZ_v6, ADDON_BETWEEN, DDP_COMPONENT_OVL3_2L},
-};
-
-static const struct mtk_addon_module_data addon_wdma0_data[] = {
-	{DISP_WDMA0, ADDON_AFTER, DDP_COMPONENT_DITHER0},
-};
-
-static const struct mtk_addon_module_data addon_wdma1_data[] = {
-	{DISP_WDMA1, ADDON_AFTER, DDP_COMPONENT_DITHER1},
 };
 
 struct disp_iommu_device *disp_get_iommu_dev(void);
@@ -337,5 +331,6 @@ void **mtk_aod_scp_ipi_init(void);
 void mtk_free_mml_submit(struct mml_submit *temp);
 int copy_mml_submit(struct mml_submit *src, struct mml_submit *dst);
 void **mtk_drm_disp_sec_cb_init(void);
+void mtk_drm_top_clk_dump_freqs(struct drm_device *drm, unsigned int id);
 
 #endif /* MTK_DRM_DRV_H */

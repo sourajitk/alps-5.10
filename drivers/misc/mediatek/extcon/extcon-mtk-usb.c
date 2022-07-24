@@ -243,14 +243,18 @@ static int mtk_extcon_tcpc_notifier(struct notifier_block *nb,
 	struct mtk_extcon_info *extcon =
 			container_of(nb, struct mtk_extcon_info, tcpc_nb);
 	struct device *dev = extcon->dev;
+#ifndef OPLUS_FEATURE_CHG_BASIC
 	bool vbus_on;
+#endif
 
 	switch (event) {
 	case TCP_NOTIFY_SOURCE_VBUS:
+#ifndef OPLUS_FEATURE_CHG_BASIC
 		dev_info(dev, "source vbus = %dmv\n",
 				 noti->vbus_state.mv);
 		vbus_on = (noti->vbus_state.mv) ? true : false;
 		mtk_usb_extcon_set_vbus(extcon, vbus_on);
+#endif
 		break;
 	case TCP_NOTIFY_TYPEC_STATE:
 		dev_info(dev, "old_state=%d, new_state=%d\n",
@@ -526,11 +530,8 @@ static int mtk_usb_extcon_probe(struct platform_device *pdev)
 
 #if IS_ENABLED(CONFIG_TCPC_CLASS)
 	ret = of_property_read_string(dev->of_node, "tcpc", &tcpc_name);
-	if (of_property_read_bool(dev->of_node, "mediatek,u2") && ret == 0
-		&& strcmp(tcpc_name, "type_c_port0") == 0) {
-		dev_info(dev, "create %d dir\n", PROC_FILE_SMT);
+	if (ret == 0 && strcmp(tcpc_name, "type_c_port0") == 0)
 		mtk_usb_extcon_procfs_init(extcon);
-	}
 #endif
 
 	extcon->extcon_wq = create_singlethread_workqueue("extcon_usb");

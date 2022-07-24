@@ -350,18 +350,29 @@ out:
 
 static long _dma_buf_set_name(struct dma_buf *dmabuf, const char *name)
 {
+	long ret = 0;
+
+	dma_resv_lock(dmabuf->resv, NULL);
+	if (!list_empty(&dmabuf->attachments)) {
+		ret = -EBUSY;
+		goto out_unlock;
+	}
 	spin_lock(&dmabuf->name_lock);
 	kfree(dmabuf->name);
 	dmabuf->name = name;
 	spin_unlock(&dmabuf->name_lock);
 
-	return 0;
+out_unlock:
+	dma_resv_unlock(dmabuf->resv);
+	return ret;
 }
 
 /**
  * dma_buf_set_name - Set a name to a specific dma_buf to track the usage.
- * It could support changing the name of the dma-buf if the same piece of
- * memory is used for multiple purpose between different devices.
+ * The name of the dma-buf buffer can only be set when the dma-buf is not
+ * attached to any devices. It could theoritically support changing the
+ * name of the dma-buf if the same piece of memory is used for multiple
+ * purpose between different devices.
  *
  * @dmabuf: [in]     dmabuf buffer that will be renamed.
  * @buf:    [in]     A piece of userspace memory that contains the name of
@@ -1415,13 +1426,13 @@ static int dma_buf_debug_show(struct seq_file *s, void *unused)
 			goto error_unlock;
 
 		spin_lock(&buf_obj->name_lock);
-		seq_printf(s, "%08zu\t%08x\t%08x\t%08ld\t%s\t%08lu\t%s\n",
-				buf_obj->size,
-				buf_obj->file->f_flags, buf_obj->file->f_mode,
-				file_count(buf_obj->file),
-				buf_obj->exp_name,
-				file_inode(buf_obj->file)->i_ino,
-				buf_obj->name ?: "");
+	 	seq_printf(s, "%08zu\t%08x\t%08x\t%08ld\t%s\t%08lu\t%s\n",
+	 			buf_obj->size,
+	 			buf_obj->file->f_flags, buf_obj->file->f_mode,
+	 			file_count(buf_obj->file),
+	 			buf_obj->exp_name,
+	 			file_inode(buf_obj->file)->i_ino,
+	 			buf_obj->name ?: "");
 		spin_unlock(&buf_obj->name_lock);
 
 		robj = buf_obj->resv;

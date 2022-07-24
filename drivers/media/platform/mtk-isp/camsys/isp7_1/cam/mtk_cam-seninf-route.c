@@ -211,28 +211,16 @@ struct seninf_vc *mtk_cam_seninf_get_vc_by_pad(struct seninf_ctx *ctx, int idx)
 	return NULL;
 }
 
-int mtk_cam_seninf_get_pad_data_info(struct v4l2_subdev *sd,
-				unsigned int pad,
-				struct mtk_seninf_pad_data_info *result)
+unsigned int mtk_cam_seninf_get_vc_feature(struct v4l2_subdev *sd, unsigned int pad)
 {
 	struct seninf_vc *pvc = NULL;
 	struct seninf_ctx *ctx = container_of(sd, struct seninf_ctx, subdev);
 
-	if (!result)
-		return -1;
-
-	memset(result, 0, sizeof(*result));
 	pvc = mtk_cam_seninf_get_vc_by_pad(ctx, pad);
-	if (pvc) {
-		result->feature = pvc->feature;
-		result->mux = pvc->mux;
-		result->exp_hsize = pvc->exp_hsize;
-		result->exp_vsize = pvc->exp_vsize;
+	if (pvc)
+		return pvc->feature;
 
-		return 0;
-	}
-
-	return -1;
+	return VC_NONE;
 }
 
 static int get_mbus_format_by_dt(int dt)
@@ -458,44 +446,16 @@ int mtk_cam_seninf_get_vcinfo(struct seninf_ctx *ctx)
 			vc->out_pad = PAD_SRC_PDAF6;
 			break;
 		case VC_YUV_Y:
-			if (raw_cnt >= 3) {
-				dev_info(ctx->dev,
-					 "too much raw data\n");
-				continue;
-			}
 			vc->feature = VC_RAW_DATA;
 			vc->out_pad = PAD_SRC_RAW0;
-
-			++raw_cnt;
-			vc->group = grp++;
 			break;
 		case VC_YUV_UV:
-			if (raw_cnt >= 3) {
-				dev_info(ctx->dev,
-					 "too much raw data\n");
-				continue;
-			}
 			vc->feature = VC_RAW_DATA;
 			vc->out_pad = PAD_SRC_RAW1;
-
-			++raw_cnt;
-			vc->group = grp++;
 			break;
 		case VC_GENERAL_EMBEDDED:
 			vc->feature = VC_GENERAL_EMBEDDED;
 			vc->out_pad = PAD_SRC_GENERAL0;
-			break;
-		case VC_RAW_PROCESSED_DATA:
-			vc->feature = VC_RAW_DATA;
-			vc->out_pad = PAD_SRC_RAW_EXT0;
-
-			vc->group = grp++;
-			break;
-		case VC_RAW_W_DATA:
-			vc->feature = VC_RAW_DATA;
-			vc->out_pad = PAD_SRC_RAW_W0;
-
-			vc->group = grp++;
 			break;
 		default:
 			if (vc->dt == 0x2a || vc->dt == 0x2b ||
@@ -515,6 +475,12 @@ int mtk_cam_seninf_get_vcinfo(struct seninf_ctx *ctx)
 					break;
 				case VC_STAGGER_SE:
 					vc->out_pad = PAD_SRC_RAW2;
+					break;
+				case VC_RAW_W_DATA:
+					vc->out_pad = PAD_SRC_RAW_W0;
+					break;
+				case VC_RAW_PROCESSED_DATA:
+					vc->out_pad = PAD_SRC_RAW_EXT0;
 					break;
 				default:
 					vc->out_pad = PAD_SRC_RAW0 + raw_cnt;
@@ -539,7 +505,6 @@ int mtk_cam_seninf_get_vcinfo(struct seninf_ctx *ctx)
 			case VC_PDAF_STATS_ME_PIX_2:
 			case VC_PDAF_STATS_SE_PIX_1:
 			case VC_PDAF_STATS_SE_PIX_2:
-			case VC_GENERAL_EMBEDDED:
 				vc->group = grp++;
 				break;
 			default:
@@ -820,8 +785,7 @@ int _mtk_cam_seninf_set_camtg(struct v4l2_subdev *sd,
 								!!vc->dt, !!vc->dt);
 			g_seninf_ops->_set_cammux_src(ctx, vc->mux, vc->cam,
 								vc->exp_hsize,
-								vc->exp_vsize,
-								vc->dt);
+								vc->exp_vsize);
 			g_seninf_ops->_set_cammux_chk_pixel_mode(ctx,
 								vc->cam,
 								vc->pixel_mode);
@@ -859,8 +823,7 @@ int _mtk_cam_seninf_set_camtg(struct v4l2_subdev *sd,
 									!!vc->dt, !!vc->dt);
 				g_seninf_ops->_set_cammux_src(ctx, vc->mux, vc->cam,
 									vc->exp_hsize,
-									vc->exp_vsize,
-									vc->dt);
+									vc->exp_vsize);
 				g_seninf_ops->_set_cammux_chk_pixel_mode(ctx,
 									vc->cam,
 									vc->pixel_mode);

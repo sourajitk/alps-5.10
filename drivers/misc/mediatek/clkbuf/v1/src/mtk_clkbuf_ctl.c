@@ -79,7 +79,6 @@ int clk_buf_hw_ctrl(const char *xo_name, bool onoff)
 }
 EXPORT_SYMBOL(clk_buf_hw_ctrl);
 
-#if defined(SRCLKEN_RC_SUPPORT)
 int clk_buf_voter_ctrl_by_id(const uint8_t subsys_id, enum RC_CTRL_CMD rc_req)
 {
 	if (!clkbuf_ctl.init_done) {
@@ -95,7 +94,6 @@ int clk_buf_voter_ctrl_by_id(const uint8_t subsys_id, enum RC_CTRL_CMD rc_req)
 	return srclken_rc_subsys_ctrl(subsys_id, rc_req_list[rc_req]);
 }
 EXPORT_SYMBOL(clk_buf_voter_ctrl_by_id);
-#endif /* defined(SRCLKEN_RC_SUPPORT) */
 
 static bool clk_buf_get_flightmode(void)
 {
@@ -203,10 +201,13 @@ static ssize_t __clk_buf_dump_pmif_log(char *buf)
 	}
 
 	ret = clkbuf_pmif_get_inf_en(PMIF_RC_INF, &inf_en);
-	if (!ret) {
-		len += snprintf(buf + len, PAGE_SIZE - len,
-			"RC_INF_EN: 0x%x\n", inf_en);
+	if (ret) {
+		len = (len > 2) ? len : (len - 2);
+		len += snprintf(buf + len, PAGE_SIZE - len, "\n");
+		return len;
 	}
+	len += snprintf(buf + len, PAGE_SIZE - len,
+		"RC_INF_EN: 0x%x\n", inf_en);
 
 	for (i = 0; i < clkbuf_pmif_get_pmif_cnt(); i++) {
 		ret = clkbuf_pmif_get_misc_reg(&mode_ctl, &sleep_ctl, i);
@@ -476,10 +477,8 @@ static int __rc_dump_trace(char *buf, u32 buf_size)
 	int len = 0;
 	u8 i;
 
-	for (i = 0; i < rc_get_trace_num() && i < rc_trace_dump_num; i++) {
+	for (i = 0; i < rc_get_trace_num() && i < rc_trace_dump_num; i++)
 		len += srclken_rc_dump_trace(i, buf + len, buf_size - len);
-		len += srclken_rc_dump_time(i, buf + len, buf_size - len);
-	}
 
 	return len;
 }
@@ -687,7 +686,7 @@ static ssize_t clk_buf_ctrl_show(struct kobject *kobj,
 static ssize_t clk_buf_debug_store(struct kobject *kobj,
 		struct kobj_attribute *attr, const char *buf, size_t count)
 {
-	char cmd[21] = {0};
+	char cmd[11] = {0};
 	u32 val = 0;
 
 	if (!clkbuf_ctl.init_done) {
@@ -695,7 +694,7 @@ static ssize_t clk_buf_debug_store(struct kobject *kobj,
 		return -ENODEV;
 	}
 
-	if (sscanf(buf, "%20s %u", cmd, &val) != 2)
+	if (sscanf(buf, "%20s %x", cmd, &val) != 2)
 		return -EPERM;
 
 	if (!strcmp(cmd, "DEBUG")) {
@@ -750,7 +749,7 @@ static ssize_t clk_buf_debug_show(struct kobject *kobj,
 			clkbuf_ctl.pmrc_en_debug);
 
 	len += snprintf(buf + len, PAGE_SIZE - len,
-			"available control: DEBUG, MISC_DEBUG, DWS_DEBUG, REG_DEBUG, PMRC_EN_DEBUG\n");
+			"available control: DEBUG, MISC_DEBUG, DWS_DEBUG, PMRC_EN_DEBUG\n");
 
 	return len;
 }

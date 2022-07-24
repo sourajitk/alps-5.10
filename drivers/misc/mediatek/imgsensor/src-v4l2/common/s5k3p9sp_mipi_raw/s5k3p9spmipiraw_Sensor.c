@@ -189,7 +189,7 @@ static struct imgsensor_info_struct imgsensor_info = {
 		.mipi_sensor_type = MIPI_OPHY_NCSI2,
 		.mipi_settle_delay_mode = 1,
 		.sensor_output_dataformat =
-			SENSOR_OUTPUT_FORMAT_RAW_4CELL_BAYER_Gr,
+			SENSOR_OUTPUT_FORMAT_RAW_4CELL_Gr,
 		.mclk = 24,
 		.mipi_lane_num = SENSOR_MIPI_4_LANE,
 		.i2c_addr_table = {0x20, 0xff},
@@ -1231,8 +1231,7 @@ static kal_uint32 get_default_framerate_by_scenario(struct subdrv_ctx *ctx,
 
 static kal_uint32 set_test_pattern_mode(struct subdrv_ctx *ctx, kal_uint32 mode)
 {
-	if (mode != ctx->test_pattern)
-		pr_debug("mode: %d\n", mode);
+	DEBUG_LOG(ctx, "mode: %d\n", mode);
 
 	if (mode)
 		write_cmos_sensor_16(ctx, 0x0600, mode); /*100% Color bar*/
@@ -1246,8 +1245,7 @@ static kal_uint32 set_test_pattern_mode(struct subdrv_ctx *ctx, kal_uint32 mode)
 static kal_uint32 set_test_pattern_data(struct subdrv_ctx *ctx, struct mtk_test_pattern_data *data)
 {
 
-	DEBUG_LOG(ctx, "test_patterndata mode = %d  R = %x, Gr = %x,Gb = %x,B = %x\n",
-		ctx->test_pattern,
+	pr_debug("test_patterndata mode = %d  R = %x, Gr = %x,Gb = %x,B = %x\n", ctx->test_pattern,
 		data->Channel_R >> 22, data->Channel_Gr >> 22,
 		data->Channel_Gb >> 22, data->Channel_B >> 22);
 
@@ -1758,10 +1756,21 @@ static int get_csi_param(struct subdrv_ctx *ctx,
 	enum SENSOR_SCENARIO_ID_ENUM scenario_id,
 	struct mtk_csi_param *csi_param)
 {
-	csi_param->legacy_phy = 0;
-	csi_param->not_fixed_trail_settle = 0;
-	csi_param->dphy_trail = 0;
+	csi_param->legacy_phy = 1;
+	csi_param->not_fixed_trail_settle = 1;
 
+	switch (scenario_id) {
+	case SENSOR_SCENARIO_ID_NORMAL_CAPTURE:
+		csi_param->dphy_trail = 0x20;
+		break;
+	case SENSOR_SCENARIO_ID_NORMAL_VIDEO:
+	case SENSOR_SCENARIO_ID_HIGHSPEED_VIDEO:
+		csi_param->dphy_trail = 0x3d;
+		break;
+	default:
+		csi_param->dphy_trail = 0;
+		break;
+	}
 	return 0;
 }
 

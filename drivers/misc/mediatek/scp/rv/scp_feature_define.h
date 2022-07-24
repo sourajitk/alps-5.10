@@ -18,6 +18,7 @@
 #endif
 #define SCP_DVFS_INIT_ENABLE             (1)
 #define SCP_VOW_LOW_POWER_MODE           (1)
+#define SCP_DEBUG_NODE_ENABLE            (0)
 
 /* scp rescovery feature option*/
 #define SCP_RECOVERY_SUPPORT             (1)

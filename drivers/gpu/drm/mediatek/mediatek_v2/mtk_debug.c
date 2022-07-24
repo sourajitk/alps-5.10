@@ -39,7 +39,11 @@
 #include "mtk_dp_debug.h"
 #include "mtk_drm_arr.h"
 #include "mtk_drm_graphics_base.h"
-
+/*#ifdef OPLUS_BUG_STABILITY*/
+#include <mt-plat/mtk_boot_common.h>
+#include <soc/oplus/system/oplus_project.h>
+#include "../../oplus/oplus_display_mtk_debug.h"
+/*#endif*/
 #define DISP_REG_CONFIG_MMSYS_CG_SET(idx) (0x104 + 0x10 * (idx))
 #define DISP_REG_CONFIG_MMSYS_CG_CLR(idx) (0x108 + 0x10 * (idx))
 #define DISP_REG_CONFIG_DISP_FAKE_ENG_EN(idx) (0x200 + 0x20 * (idx))
@@ -74,8 +78,12 @@ bool g_msync_debug;
 bool g_profile_log;
 
 EXPORT_SYMBOL(g_mobile_log);
+//#ifdef OPLUS_BUG_STABILITY
+#define PANEL_SERIAL_NUM_REG 0xA1
+#define PANEL_REG_READ_LEN   10
+//#endif /*OPLUS_BUG_STABILITY*/
 EXPORT_SYMBOL(g_msync_debug);
-EXPORT_SYMBOL(g_detail_log);
+
 bool g_irq_log;
 bool g_trace_log;
 bool g_mml_debug;
@@ -89,7 +97,23 @@ unsigned int disp_cm_bypass;
 static unsigned int m_old_pq_persist_property[32];
 unsigned int m_new_pq_persist_property[32];
 
+/*#ifdef OPLUS_ADFR*/
+bool g_adfr_log = 0;
+int dsi_cmd_log_enable = 0;
+/*#endif*/
+int trig_db_enable = 0;
+
+
+EXPORT_SYMBOL(g_fence_log);
+EXPORT_SYMBOL(g_detail_log);
+EXPORT_SYMBOL(g_irq_log);
+EXPORT_SYMBOL(g_trace_log);
+EXPORT_SYMBOL(dsi_cmd_log_enable);
+EXPORT_SYMBOL(trig_db_enable);
+EXPORT_SYMBOL(g_adfr_log);
+
 unsigned int g_mml_mode;
+extern bool pq_trigger;
 
 int gCaptureOVLEn;
 int gCaptureWDMAEn;
@@ -131,9 +155,9 @@ static struct logger_buffer dprec_logger_buffer[DPREC_LOGGER_PR_NUM] = {
 static bool is_buffer_init;
 static char *debug_buffer;
 #if IS_ENABLED(CONFIG_MTK_DISP_LOGGER)
-static bool logger_enable = 1;
+bool logger_enable = 1;
 #else
-static bool logger_enable;
+bool logger_enable;
 #endif
 
 static int draw_RGBA8888_buffer(char *va, int w, int h,
@@ -404,25 +428,35 @@ int mtk_dprec_logger_get_buf(enum DPREC_LOGGER_PR_TYPE type, char *stringbuf,
 	return n;
 }
 
-extern int mtk_drm_setbacklight(struct drm_crtc *crtc, unsigned int level);
+extern int mtk_drm_setbacklight(struct drm_crtc *crtc, unsigned int level, bool atomic);
+//#ifdef OPLUS_BUG_STABILITY
+static int readcount = 0;
+extern int panel_serial_number_read(struct drm_crtc *crtc, char cmd, int num);
+//#endif /*OPLUS_BUG_STABILITY*/
 int mtkfb_set_backlight_level(unsigned int level)
 {
 	struct drm_crtc *crtc;
 	int ret = 0;
 
-	if (IS_ERR_OR_NULL(drm_dev)) {
-		DDPPR_ERR("%s, invalid drm dev\n", __func__);
-		return -EINVAL;
-	}
-
 	/* this debug cmd only for crtc0 */
 	crtc = list_first_entry(&(drm_dev)->mode_config.crtc_list,
 				typeof(*crtc), head);
-	if (IS_ERR_OR_NULL(crtc)) {
-		DDPPR_ERR("%s failed to find crtc\n", __func__);
+	if (!crtc) {
+		DDPPR_ERR("find crtc fail\n");
 		return -EINVAL;
 	}
-	ret = mtk_drm_setbacklight(crtc, level);
+
+//#ifdef OPLUS_BUG_STABILITY
+	DISP_DEBUG("panel_serial_number_read get_boot_mode=%d\n",get_boot_mode());
+	if((get_boot_mode() == NORMAL_BOOT)) {
+		if ((level > 1) && (readcount == 0)) {
+			panel_serial_number_read(crtc, PANEL_SERIAL_NUM_REG, PANEL_REG_READ_LEN);
+			DDPPR_ERR("%s :panel_serial_number_read only read in NORMAL_BOOT\n", __func__);
+			readcount = 1;
+		}
+	}
+//#endif /*OPLUS_BUG_STABILITY*/
+	ret = mtk_drm_setbacklight(crtc, level, false);
 
 	return ret;
 }
@@ -433,15 +467,10 @@ int mtkfb_set_aod_backlight_level(unsigned int level)
 	struct drm_crtc *crtc;
 	int ret = 0;
 
-	if (IS_ERR_OR_NULL(drm_dev)) {
-		DDPPR_ERR("%s, invalid drm dev\n", __func__);
-		return -EINVAL;
-	}
-
 	/* this debug cmd only for crtc0 */
 	crtc = list_first_entry(&(drm_dev)->mode_config.crtc_list,
 				typeof(*crtc), head);
-	if (IS_ERR_OR_NULL(crtc)) {
+	if (!crtc) {
 		DDPPR_ERR("find crtc fail\n");
 		return -EINVAL;
 	}
@@ -455,15 +484,10 @@ void mtk_disp_mipi_ccci_callback(unsigned int en, unsigned int usrdata)
 {
 	struct drm_crtc *crtc;
 
-	if (IS_ERR_OR_NULL(drm_dev)) {
-		DDPPR_ERR("%s, invalid drm dev\n", __func__);
-		return;
-	}
-
 	crtc = list_first_entry(&(drm_dev)->mode_config.crtc_list,
 				typeof(*crtc), head);
 
-	if (IS_ERR_OR_NULL(crtc)) {
+	if (!crtc) {
 		DDPPR_ERR("find crtc fail\n");
 		return;
 	}
@@ -477,15 +501,10 @@ void mtk_disp_osc_ccci_callback(unsigned int en, unsigned int usrdata)
 {
 	struct drm_crtc *crtc;
 
-	if (IS_ERR_OR_NULL(drm_dev)) {
-		DDPPR_ERR("%s, invalid drm dev\n", __func__);
-		return;
-	}
-
 	crtc = list_first_entry(&(drm_dev)->mode_config.crtc_list,
 				typeof(*crtc), head);
 
-	if (IS_ERR_OR_NULL(crtc)) {
+	if (!crtc) {
 		DDPPR_ERR("find crtc fail\n");
 		return;
 	}
@@ -499,15 +518,10 @@ void display_enter_tui(void)
 {
 	struct drm_crtc *crtc;
 
-	if (IS_ERR_OR_NULL(drm_dev)) {
-		DDPPR_ERR("%s, invalid drm dev\n", __func__);
-		return;
-	}
-
 	crtc = list_first_entry(&(drm_dev)->mode_config.crtc_list,
 				typeof(*crtc), head);
 
-	if (IS_ERR_OR_NULL(crtc)) {
+	if (!crtc) {
 		DDPPR_ERR("find crtc fail\n");
 		return;
 	}
@@ -520,15 +534,10 @@ void display_exit_tui(void)
 {
 	struct drm_crtc *crtc;
 
-	if (IS_ERR_OR_NULL(drm_dev)) {
-		DDPPR_ERR("%s, invalid drm dev\n", __func__);
-		return;
-	}
-
 	crtc = list_first_entry(&(drm_dev)->mode_config.crtc_list,
 				typeof(*crtc), head);
 
-	if (IS_ERR_OR_NULL(crtc)) {
+	if (!crtc) {
 		DDPPR_ERR("find crtc fail\n");
 		return;
 	}
@@ -541,15 +550,15 @@ static int debug_get_info(unsigned char *stringbuf, int buf_len)
 	int n = 0;
 	struct mtk_drm_private *private;
 
-	if (IS_ERR_OR_NULL(drm_dev)) {
+	if (!drm_dev) {
 		DDPPR_ERR("%s:%d, drm_dev is NULL\n",
 			__func__, __LINE__);
-		return -EINVAL;
+		return -1;
 	}
-	if (IS_ERR_OR_NULL(drm_dev->dev_private)) {
+	if (!drm_dev->dev_private) {
 		DDPPR_ERR("%s:%d, drm_dev->dev_private is NULL\n",
 			__func__, __LINE__);
-		return -ENODEV;
+		return -1;
 	}
 
 	private = drm_dev->dev_private;
@@ -833,29 +842,29 @@ int mtk_ddic_dsi_send_cmd(struct mtk_ddic_dsi_msg *cmd_msg,
 	struct mtk_ddp_comp *output_comp;
 	struct cmdq_pkt *cmdq_handle;
 	bool is_frame_mode;
+	//#ifdef OPLUS_BUG_STATABILITY
+	struct cmdq_client *gce_client;
+	bool use_lpm = false;
+	//#endif
 	struct mtk_cmdq_cb_data *cb_data;
 	int index = 0;
 	int ret = 0;
 
 	DDPMSG("%s +\n", __func__);
 
-	if (IS_ERR_OR_NULL(drm_dev)) {
-		DDPPR_ERR("%s, invalid drm dev\n", __func__);
-		return -EINVAL;
-	}
-
 	/* This cmd only for crtc0 */
 	crtc = list_first_entry(&(drm_dev)->mode_config.crtc_list,
 			typeof(*crtc), head);
-	if (IS_ERR_OR_NULL(crtc)) {
-		DDPPR_ERR("find crtc fail\n");
-		return -EINVAL;
-	}
-
 	index = drm_crtc_index(crtc);
 
 	CRTC_MMP_EVENT_START(index, ddic_send_cmd, (unsigned long)crtc,
 				blocking);
+
+	if (!crtc) {
+		DDPPR_ERR("find crtc fail\n");
+		CRTC_MMP_EVENT_END(index, ddic_send_cmd, 0, 0);
+		return -EINVAL;
+	}
 
 	private = crtc->dev->dev_private;
 	mtk_crtc = to_mtk_crtc(crtc);
@@ -889,6 +898,10 @@ int mtk_ddic_dsi_send_cmd(struct mtk_ddic_dsi_msg *cmd_msg,
 	}
 
 	is_frame_mode = mtk_crtc_is_frame_trigger_mode(&mtk_crtc->base);
+	//#ifdef OPLUS_BUG_STATABILITY
+	if (cmd_msg)
+		use_lpm = cmd_msg->flags & MIPI_DSI_MSG_USE_LPM;
+	//#endif
 
 	CRTC_MMP_MARK(index, ddic_send_cmd, 1, 0);
 
@@ -897,8 +910,16 @@ int mtk_ddic_dsi_send_cmd(struct mtk_ddic_dsi_msg *cmd_msg,
 
 	CRTC_MMP_MARK(index, ddic_send_cmd, 2, 0);
 
-	mtk_crtc_pkt_create(&cmdq_handle, crtc,
-			mtk_crtc->gce_obj.client[CLIENT_DSI_CFG]);
+	//#ifdef OPLUS_BUG_STATABILITY
+	/* only use CLIENT_DSI_CFG for VM CMD scenario */
+	/* use CLIENT_CFG otherwise */
+
+	gce_client = (!is_frame_mode && use_lpm) ?
+			mtk_crtc->gce_obj.client[CLIENT_DSI_CFG] :
+			mtk_crtc->gce_obj.client[CLIENT_CFG];
+
+	mtk_crtc_pkt_create(&cmdq_handle, crtc, gce_client);
+	//#endif
 
 	if (mtk_crtc_with_sub_path(crtc, mtk_crtc->ddp_mode))
 		mtk_crtc_wait_frame_done(mtk_crtc, cmdq_handle,
@@ -912,8 +933,6 @@ int mtk_ddic_dsi_send_cmd(struct mtk_ddic_dsi_msg *cmd_msg,
 			mtk_crtc->gce_obj.event[EVENT_STREAM_BLOCK]);
 		cmdq_pkt_wfe(cmdq_handle,
 			mtk_crtc->gce_obj.event[EVENT_CABC_EOF]);
-		cmdq_pkt_clear_event(cmdq_handle,
-			mtk_crtc->gce_obj.event[EVENT_STREAM_DIRTY]);
 	}
 
 	/* DSI_SEND_DDIC_CMD */
@@ -922,8 +941,8 @@ int mtk_ddic_dsi_send_cmd(struct mtk_ddic_dsi_msg *cmd_msg,
 		DSI_SEND_DDIC_CMD, cmd_msg);
 
 	if (is_frame_mode) {
-		cmdq_pkt_set_event(cmdq_handle,
-			mtk_crtc->gce_obj.event[EVENT_STREAM_DIRTY]);
+		//#ifdef OPLUS_BUG_STATABILITY
+		//#endif
 		cmdq_pkt_set_event(cmdq_handle,
 			mtk_crtc->gce_obj.event[EVENT_CABC_EOF]);
 		cmdq_pkt_set_event(cmdq_handle,
@@ -966,22 +985,18 @@ int mtk_ddic_dsi_read_cmd(struct mtk_ddic_dsi_msg *cmd_msg)
 
 	DDPMSG("%s +\n", __func__);
 
-	if (IS_ERR_OR_NULL(drm_dev)) {
-		DDPPR_ERR("%s, invalid drm dev\n", __func__);
-		return -EINVAL;
-	}
-
 	/* This cmd only for crtc0 */
 	crtc = list_first_entry(&(drm_dev)->mode_config.crtc_list,
 			typeof(*crtc), head);
-	if (IS_ERR_OR_NULL(crtc)) {
-		DDPPR_ERR("find crtc fail\n");
-		return -EINVAL;
-	}
-
 	index = drm_crtc_index(crtc);
 
 	CRTC_MMP_EVENT_START(index, ddic_read_cmd, (unsigned long)crtc, 0);
+
+	if (!crtc) {
+		DDPPR_ERR("find crtc fail\n");
+		CRTC_MMP_EVENT_END(index, ddic_read_cmd, 0, 0);
+		return -EINVAL;
+	}
 
 	private = crtc->dev->dev_private;
 	mtk_crtc = to_mtk_crtc(crtc);
@@ -1554,14 +1569,9 @@ bool mtk_drm_cwb_enable(int en,
 	struct mtk_drm_crtc *mtk_crtc;
 	struct mtk_cwb_info *cwb_info;
 
-	if (IS_ERR_OR_NULL(drm_dev)) {
-		DDPPR_ERR("%s, invalid drm dev\n", __func__);
-		return false;
-	}
-
 	crtc = list_first_entry(&(drm_dev)->mode_config.crtc_list,
 				typeof(*crtc), head);
-	if (IS_ERR_OR_NULL(crtc)) {
+	if (!crtc) {
 		DDPPR_ERR("find crtc fail\n");
 		return false;
 	}
@@ -1604,14 +1614,9 @@ bool mtk_drm_set_cwb_roi(struct mtk_rect rect)
 	struct mtk_drm_gem_obj *mtk_gem;
 	struct drm_mode_fb_cmd2 mode = {0};
 
-	if (IS_ERR_OR_NULL(drm_dev)) {
-		DDPPR_ERR("%s, invalid drm dev\n", __func__);
-		return false;
-	}
-
 	crtc = list_first_entry(&(drm_dev)->mode_config.crtc_list,
 				typeof(*crtc), head);
-	if (IS_ERR_OR_NULL(crtc)) {
+	if (!crtc) {
 		DDPPR_ERR("find crtc fail\n");
 		return false;
 	}
@@ -1705,14 +1710,9 @@ void mtk_drm_cwb_backup_copy_size(void)
 	struct mtk_ddp_comp *comp;
 	int left_w = 0;
 
-	if (IS_ERR_OR_NULL(drm_dev)) {
-		DDPPR_ERR("%s, invalid drm dev\n", __func__);
-		return;
-	}
-
 	crtc = list_first_entry(&(drm_dev)->mode_config.crtc_list,
 				typeof(*crtc), head);
-	if (IS_ERR_OR_NULL(crtc)) {
+	if (!crtc) {
 		DDPPR_ERR("find crtc fail\n");
 		return;
 	}
@@ -1746,15 +1746,10 @@ bool mtk_drm_set_cwb_user_buf(void *user_buffer, enum CWB_BUFFER_TYPE type)
 	struct mtk_drm_crtc *mtk_crtc;
 	struct mtk_cwb_info *cwb_info;
 
-	if (IS_ERR_OR_NULL(drm_dev)) {
-		DDPPR_ERR("%s, invalid drm dev\n", __func__);
-		return false;
-	}
-
 	/* this debug cmd only for crtc0 */
 	crtc = list_first_entry(&(drm_dev)->mode_config.crtc_list,
 				typeof(*crtc), head);
-	if (IS_ERR_OR_NULL(crtc)) {
+	if (!crtc) {
 		DDPPR_ERR("find crtc fail\n");
 		return false;
 	}
@@ -1784,14 +1779,9 @@ static void mtk_crtc_set_cm_tune_para(
 	struct mtk_drm_crtc *mtk_crtc;
 	struct mtk_panel_cm_params *cm_tune_params;
 
-	if (IS_ERR_OR_NULL(drm_dev)) {
-		DDPPR_ERR("%s, invalid drm dev\n", __func__);
-		return;
-	}
-
 	crtc = list_first_entry(&(drm_dev)->mode_config.crtc_list,
 			typeof(*crtc), head);
-	if (IS_ERR_OR_NULL(crtc)) {
+	if (!crtc) {
 		DDPPR_ERR("find crtc fail\n");
 		return;
 	}
@@ -1833,14 +1823,9 @@ bool mtk_crtc_spr_tune_enable(
 	struct mtk_drm_crtc *mtk_crtc;
 	struct mtk_panel_spr_params *spr_params;
 
-	if (IS_ERR_OR_NULL(drm_dev)) {
-		DDPPR_ERR("%s, invalid drm dev\n", __func__);
-		return false;
-	}
-
 	crtc = list_first_entry(&(drm_dev)->mode_config.crtc_list,
 			typeof(*crtc), head);
-	if (IS_ERR_OR_NULL(crtc)) {
+	if (!crtc) {
 		DDPPR_ERR("find crtc fail\n");
 		return false;
 	}
@@ -1874,14 +1859,9 @@ static void mtk_crtc_set_spr_tune_para(
 	struct mtk_panel_spr_params *spr_params;
 	struct spr_color_params *spr_tune_params;
 
-	if (IS_ERR_OR_NULL(drm_dev)) {
-		DDPPR_ERR("%s, invalid drm dev\n", __func__);
-		return;
-	}
-
 	crtc = list_first_entry(&(drm_dev)->mode_config.crtc_list,
 			typeof(*crtc), head);
-	if (IS_ERR_OR_NULL(crtc)) {
+	if (!crtc) {
 		DDPPR_ERR("find crtc fail\n");
 		return;
 	}
@@ -1976,14 +1956,110 @@ int mtk_drm_ioctl_pq_get_persist_property(struct drm_device *dev, void *data,
 	return ret;
 }
 
+void mtk_read_ddic_v2(u8 ddic_reg, int ret_num, char ret_val[10])
+{
+		unsigned int j = 0;
+		unsigned int ret_dlen = 0;
+		int ret;
+		struct mtk_ddic_dsi_msg *cmd_msg =
+				vmalloc(sizeof(struct mtk_ddic_dsi_msg));
+		u8 tx[10] = {0};
+		DDPMSG("%s read val %d\n", __func__, ret_num);
+
+		if (!cmd_msg) {
+			DDPPR_ERR("cmd msg is NULL\n");
+			return;
+		}
+		memset(cmd_msg, 0, sizeof(struct mtk_ddic_dsi_msg));
+
+		cmd_msg->channel = 0;
+		cmd_msg->tx_cmd_num = 1;
+		cmd_msg->type[0] = 0x06;
+		tx[0] = ddic_reg;
+		cmd_msg->tx_buf[0] = tx;
+		cmd_msg->tx_len[0] = 1;
+
+		cmd_msg->rx_cmd_num = 1;
+		cmd_msg->rx_buf[0] = vmalloc(20 * sizeof(unsigned char));
+		memset(cmd_msg->rx_buf[0], 0, 20);
+		cmd_msg->rx_len[0] = 20;
+
+		ret = mtk_ddic_dsi_read_cmd(cmd_msg);
+
+		if (ret != 0) {
+			DDPPR_ERR("%s error\n", __func__);
+			goto  done;
+		}
+
+		ret_dlen = cmd_msg->rx_len[0];
+		DDPMSG("read lcm addr:0x%x--dlen:%d\n",
+			*(char *)(cmd_msg->tx_buf[0]), ret_dlen);
+
+		for (j = 0; j < ret_dlen; j++)
+			ret_val[j] = *(char *)(cmd_msg->rx_buf[0] + j);
+
+done:
+		vfree(cmd_msg->rx_buf[0]);
+		vfree(cmd_msg);
+
+		DDPMSG("%s end -\n", __func__);
+}
+
+	EXPORT_SYMBOL(mtk_read_ddic_v2);
+
+void mtk_read_ddic_v3(u8 ddic_reg, int ret_num, char ret_val[20])
+{
+                unsigned int j = 0;
+                unsigned int ret_dlen = 0;
+                int ret;
+                struct mtk_ddic_dsi_msg *cmd_msg =
+                                vmalloc(sizeof(struct mtk_ddic_dsi_msg));
+                u8 tx[20] = {0};
+                DDPMSG("%s read val %d\n", __func__, ret_num);
+
+                if (!cmd_msg) {
+                        DDPPR_ERR("cmd msg is NULL\n");
+                        return;
+                }
+                memset(cmd_msg, 0, sizeof(struct mtk_ddic_dsi_msg));
+
+                cmd_msg->channel = 0;
+                cmd_msg->tx_cmd_num = 1;
+                cmd_msg->type[0] = 0x06;
+                tx[0] = ddic_reg;
+                cmd_msg->tx_buf[0] = tx;
+                cmd_msg->tx_len[0] = 1;
+
+                cmd_msg->rx_cmd_num = 1;
+                cmd_msg->rx_buf[0] = vmalloc(20 * sizeof(unsigned char));
+                memset(cmd_msg->rx_buf[0], 0, 20);
+                cmd_msg->rx_len[0] = 20;
+
+                ret = mtk_ddic_dsi_read_cmd(cmd_msg);
+
+                if (ret != 0) {
+                        DDPPR_ERR("%s error\n", __func__);
+                        goto  done;
+                }
+
+                ret_dlen = cmd_msg->rx_len[0];
+                DDPMSG("read lcm addr:0x%x--dlen:%d\n",
+                        *(char *)(cmd_msg->tx_buf[0]), ret_dlen);
+
+                for (j = 0; j < ret_dlen; j++)
+                        ret_val[j] = *(char *)(cmd_msg->rx_buf[0] + j);
+
+done:
+                vfree(cmd_msg->rx_buf[0]);
+                vfree(cmd_msg);
+
+                DDPMSG("%s end -\n", __func__);
+}
+
+        EXPORT_SYMBOL(mtk_read_ddic_v3);
 static void process_dbg_opt(const char *opt)
 {
 	DDPINFO("display_debug cmd %s\n", opt);
-
-	if (IS_ERR_OR_NULL(drm_dev)) {
-		DDPPR_ERR("%s, invalid drm dev,opt:%s\n", __func__, opt);
-		return;
-	}
 
 	if (strncmp(opt, "helper", 6) == 0) {
 		/*ex: echo helper:DISP_OPT_BYPASS_OVL,0 > /d/mtkfb */
@@ -2073,6 +2149,11 @@ static void process_dbg_opt(const char *opt)
 		} else if (strncmp(opt + 7, "off", 3) == 0) {
 			logger_enable = 0;
 		}
+	} else if (strncmp(opt, "pq_trig:", 8) == 0) {
+		if (strncmp(opt + 8, "on", 2) == 0)
+			pq_trigger = 1;
+		else if (strncmp(opt + 8, "off", 3) == 0)
+			pq_trigger = 0;
 	} else if (strncmp(opt, "diagnose", 8) == 0) {
 		struct drm_crtc *crtc;
 		struct mtk_drm_crtc *mtk_crtc;
@@ -2373,6 +2454,20 @@ static void process_dbg_opt(const char *opt)
 
 		DDPINFO("mipi_ccci:%d\n", en);
 		mtk_disp_mipi_ccci_callback(en, 0);
+/*#ifdef OPLUS_BUG_STABILITY*/
+	} else if (!strncmp(opt, "osc_ccci:", 9)) {
+		unsigned int en, ret;
+
+		ret = sscanf(opt, "osc_ccci:%d\n", &en);
+                if (ret != 1) {
+                        DDPPR_ERR("%d error to parse cmd %s\n",
+                                __LINE__, opt);
+                        return;
+                }
+
+                DDPINFO("osc_ccci:%d\n", en);
+                mtk_disp_osc_ccci_callback(en, 0);
+/*#endif*/
 	} else if (strncmp(opt, "aal:", 4) == 0) {
 		disp_aal_debug(opt + 4);
 	} else if (strncmp(opt, "c3d:", 4) == 0) {
@@ -2819,6 +2914,8 @@ static void process_dbg_opt(const char *opt)
 		else if (strncmp(opt + 10, "0", 1) == 0)
 			g_mml_debug = false;
 
+		DDPMSG("g_mml_debug:%d", g_mml_debug);
+
 		/* this debug cmd only for crtc0 */
 		crtc = list_first_entry(&(drm_dev)->mode_config.crtc_list,
 					typeof(*crtc), head);
@@ -2835,6 +2932,11 @@ static void process_dbg_opt(const char *opt)
 
 		DDPMSG("g_mml_debug:%d, mtk_crtc->is_mml_debug:%d",
 			g_mml_debug, mtk_crtc->is_mml_debug);
+	} else if (strncmp(opt, "adfr:", 5) == 0) {
+		if (strncmp(opt + 5, "on", 2) == 0)
+			g_adfr_log = 1;
+		else if (strncmp(opt + 5, "off", 3) == 0)
+			g_adfr_log = 0;
 	} else if (strncmp(opt, "dual_te:", 8) == 0) {
 		struct drm_crtc *crtc;
 
@@ -2868,6 +2970,26 @@ static void process_dbg_opt(const char *opt)
 		else if (strncmp(opt + 16, "-1", 2) == 0)
 			g_mml_mode = MML_MODE_NOT_SUPPORT;
 		DDPMSG("mml_mode:%d", g_mml_mode);
+
+	}else if (strncmp(opt, "read_ddic:", 10) == 0) {
+		int ret_num, ret;
+		char ret_val[10];
+		u8 ddic_reg;
+
+		ret = sscanf(opt, "read_ddic:%x, %d", &ddic_reg, &ret_num);
+		if (ret < 0) {
+			DDPPR_ERR("%d error to set disp_cm_set %s\n", __LINE__, opt);
+
+			return;
+		}
+
+		DDPMSG("read_ddic:%d,%d\n", ddic_reg, ret_num);
+		mtk_read_ddic_v2(ddic_reg, ret_num, ret_val);
+
+		for (ret = 0; ret < 10; ret++)
+			DDPMSG("read lcm addr:0x%x--byte:%d,val:0x%x\n",
+				ddic_reg, ret, ret_val[ret]);
+
 	} else if (strncmp(opt, "force_mml:", 10) == 0) {
 		struct drm_crtc *crtc;
 		struct mtk_drm_crtc *mtk_crtc;
@@ -2917,6 +3039,7 @@ static void process_dbg_opt(const char *opt)
 		if (mtk_crtc)
 			mtk_crtc->mml_cmd_ir = mml_cmd_ir;
 	}
+
 }
 
 static void process_dbg_cmd(char *cmd)
@@ -3004,14 +3127,9 @@ static int idletime_set(void *data, u64 val)
 	if (val > 1000000)
 		val = 1000000;
 
-	if (IS_ERR_OR_NULL(drm_dev)) {
-		DDPPR_ERR("%s, invalid drm dev\n", __func__);
-		return -EINVAL;
-	}
-
 	crtc = list_first_entry(&(drm_dev)->mode_config.crtc_list,
 				typeof(*crtc), head);
-	if (IS_ERR_OR_NULL(crtc)) {
+	if (!crtc) {
 		DDPPR_ERR("find crtc fail\n");
 		return -ENODEV;
 	}
@@ -3026,14 +3144,9 @@ static int idletime_get(void *data, u64 *val)
 {
 	struct drm_crtc *crtc;
 
-	if (IS_ERR_OR_NULL(drm_dev)) {
-		DDPPR_ERR("%s, invalid drm dev\n", __func__);
-		return -EINVAL;
-	}
-
 	crtc = list_first_entry(&(drm_dev)->mode_config.crtc_list,
 				typeof(*crtc), head);
-	if (IS_ERR_OR_NULL(crtc)) {
+	if (!crtc) {
 		DDPPR_ERR("find crtc fail\n");
 		return -ENODEV;
 	}
@@ -3059,6 +3172,7 @@ static ssize_t idletime_proc_set(struct file *file, const char __user *ubuf,
 	struct drm_crtc *crtc;
 	int ret;
 	unsigned long long val;
+	return count;
 
 	ret = kstrtoull_from_user(ubuf, count, 0, &val);
 	if (ret)
@@ -3069,14 +3183,9 @@ static ssize_t idletime_proc_set(struct file *file, const char __user *ubuf,
 	if (val > 1000000)
 		val = 1000000;
 
-	if (IS_ERR_OR_NULL(drm_dev)) {
-		DDPPR_ERR("%s, invalid drm dev\n", __func__);
-		return -EINVAL;
-	}
-
 	crtc = list_first_entry(&(drm_dev)->mode_config.crtc_list,
 				typeof(*crtc), head);
-	if (IS_ERR_OR_NULL(crtc)) {
+	if (!crtc) {
 		DDPPR_ERR("find crtc fail\n");
 		return -ENODEV;
 	}
@@ -3094,18 +3203,14 @@ static ssize_t idletime_proc_get(struct file *file, char __user *ubuf,
 	unsigned long long val;
 	int n = 0;
 	char buffer[512];
+	return 0;
 
 	if (*ppos != 0)
 		goto out;
 
-	if (IS_ERR_OR_NULL(drm_dev)) {
-		DDPPR_ERR("%s, invalid drm dev\n", __func__);
-		return -EINVAL;
-	}
-
 	crtc = list_first_entry(&(drm_dev)->mode_config.crtc_list,
 				typeof(*crtc), head);
-	if (IS_ERR_OR_NULL(crtc)) {
+	if (!crtc) {
 		DDPPR_ERR("find crtc fail\n");
 		return -ENODEV;
 	}
@@ -3520,6 +3625,11 @@ void disp_dbg_probe(void)
 	mtkfb_dbgfs = debugfs_create_file("mtkfb", S_IFREG | 0440, NULL,
 					  NULL, &debug_fops);
 
+	/*#ifdef OPLUS_BUG_STABILITY*/
+	if ((get_eng_version() == AGING) || (get_eng_version() == PREVERSION) || (get_eng_version() == HIGH_TEMP_AGING) 
+		|| (get_eng_version() == HIGH_TEMP_AGING) || (get_eng_version() == FACTORY))
+		logger_enable = 1;
+	/*#endif*/
 	d_folder = debugfs_create_dir("displowpower", NULL);
 	if (d_folder) {
 		d_file = debugfs_create_file("idletime", S_IFREG | 0644,
@@ -3618,10 +3728,6 @@ out:
 
 void disp_dbg_init(struct drm_device *dev)
 {
-	if (IS_ERR_OR_NULL(dev))
-		DDPMSG("%s, disp debug init with invalid dev\n", __func__);
-	else
-		DDPMSG("%s, disp debug init\n", __func__);
 	drm_dev = dev;
 	init_completion(&cwb_cmp);
 }
@@ -3662,3 +3768,22 @@ void get_disp_dbg_buffer(unsigned long *addr, unsigned long *size,
 		*start = 0;
 	}
 }
+
+//#ifdef OPLUS_BUG_STABILITY
+struct drm_device *get_drm_device(void){
+		return drm_dev;
+}
+EXPORT_SYMBOL(get_drm_device);
+
+void set_logger_enable(int enable)
+{
+	if (enable == 1) {
+		init_log_buffer();
+		logger_enable = 1;
+	} else if (enable == 0) {
+		logger_enable = 0;
+	}
+}
+EXPORT_SYMBOL(set_logger_enable);
+//#endif
+

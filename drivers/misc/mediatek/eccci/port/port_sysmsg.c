@@ -27,12 +27,10 @@ struct md_rf_notify_struct {
 	void (*notify_func)(unsigned int para0, unsigned int para1);
 	const char *module_name;
 };
-
+/*Xiaohan.Lin Network.RF ALPS06487637 Remove disp callback weak function, phaseout disp primary callback function */
 #define MD_RF_NOTIFY(bit, func, name) \
-	__weak void func(unsigned int para0, unsigned int para1) \
-	{ \
-		pr_debug("[ccci1/SYS]weak %s", __func__); \
-	}
+extern void func(unsigned int para0, unsigned int para1);
+
 #include "mdrf_notify_list.h"
 
 #undef MD_RF_NOTIFY

@@ -67,10 +67,6 @@ enum raw_module_id {
 #define MTK_CAM_FEATURE_PURE_OFFLINE_M2M_MASK	0x00000200
 #define MTK_CAM_FEATURE_TIMESHARE_MASK		0x00001000
 #define MTK_CAM_FEATURE_HDR_MEMORY_SAVING_MASK		0x00002000
-#define MTK_CAM_FEATURE_EXT_ISP_MASK	0x0000C000
-/* flags common to features */
-#define MTK_CAM_FEATURE_SEAMLESS_SWITCH_MASK	BIT(31)
-
 
 enum raw_function_id {
 	/* hdr */
@@ -90,9 +86,6 @@ enum raw_function_id {
 	PURE_OFFLINE_M2M		= (1 << 9),
 	TIMESHARE_1_GROUP		= (1 << 12),
 	HDR_MEMORY_SAVING		= (1 << 13),
-	EXT_ISP_CUS_1			= (1 << 14),
-	EXT_ISP_CUS_2			= (2 << 14),
-	EXT_ISP_CUS_3			= (3 << 14),
 	WITH_W_CHANNEL			= (1 << 16),
 	RAW_FUNCTION_END		= 0xF0000000,
 };
@@ -107,11 +100,9 @@ enum hdr_scenario_id {
 };
 
 enum hardware_mode_id {
-	HW_MODE_DEFAULT			= 0,
-	HW_MODE_ON_THE_FLY		= 1,
-	HW_MODE_DIRECT_COUPLED	= 2,
-	HW_MODE_OFFLINE			= 3,
-	HW_MODE_M2M				= 4,
+	DEFAULT			= 0,
+	ON_THE_FLY		= 1,
+	DCIF			= 2,
 };
 
 /* enum for pads of raw pipeline */
@@ -208,12 +199,10 @@ struct mtk_cam_resource_config {
 	u32 frz_enable;
 	u32 frz_ratio;
 	u32 tgo_pxl_mode;
-	u32 tgo_pxl_mode_before_raw;
 	u32 raw_path;
 	/* sink fmt adjusted according resource used*/
 	struct v4l2_mbus_framefmt sink_fmt;
 	u32 enable_hsf_raw;
-	u32 hw_mode;
 };
 
 /* exposure for m-stream */
@@ -226,7 +215,6 @@ struct mtk_cam_shutter_gain {
 struct mtk_cam_mstream_exposure {
 	struct mtk_cam_shutter_gain exposure[2];
 	unsigned int valid;
-	int req_id;
 };
 
 struct mtk_raw_pad_config {
@@ -268,14 +256,17 @@ struct mtk_raw_pipeline {
 	/* TODO: merge or integrate with mtk_cam_resource_config */
 	struct mtk_cam_resource user_res;
 	struct mtk_cam_resource_config res_config;
+	struct mtk_cam_resource_config try_res_config;
 	int sensor_mode_update;
 	s64 sync_id;
 	/* mstream */
 	struct mtk_cam_mstream_exposure mstream_exposure;
+	/* stagger */
+	enum hdr_scenario_id stagger_path;
+	enum hdr_scenario_id stagger_path_pending;
 	/* pde module */
 	struct mtk_raw_pde_config pde_config;
 	s64 hw_mode;
-	s64 hw_mode_pending;
 };
 
 struct mtk_raw_device {
@@ -303,7 +294,6 @@ struct mtk_raw_device {
 
 	u64 sof_count;
 	u64 vsync_count;
-	u64 last_sof_time_ns;
 
 	/* for subsample, sensor-control */
 	bool sub_sensor_ctrl_en;
@@ -316,9 +306,6 @@ struct mtk_raw_device {
 	u32 stagger_en;
 	int overrun_debug_dump_cnt;
 	int default_printk_cnt;
-
-	/* larb */
-	struct platform_device *larb_pdev;
 };
 
 struct mtk_yuv_device {
@@ -331,7 +318,6 @@ struct mtk_yuv_device {
 #ifdef CONFIG_PM_SLEEP
 	struct notifier_block pm_notifier;
 #endif
-	struct platform_device *larb_pdev;
 };
 
 /* AE information */
@@ -357,7 +343,7 @@ struct mtk_raw {
 };
 
 struct mtk_raw_stagger_select {
-	int hw_mode;
+	int stagger_path;
 	int enabled_raw;
 };
 
@@ -442,8 +428,7 @@ int
 mtk_cam_raw_try_res_ctrl(struct mtk_raw_pipeline *pipeline,
 			 struct mtk_cam_resource *res_user,
 			 struct mtk_cam_resource_config *res_cfg,
-			 struct v4l2_mbus_framefmt *sink_fmt,
-			 char *dbg_str, bool log);
+			 struct v4l2_mbus_framefmt *sink_fmt);
 int
 mtk_cam_res_copy_fmt_from_user(struct mtk_raw_pipeline *pipeline,
 			       struct mtk_cam_resource *res_user,
@@ -454,10 +439,6 @@ mtk_cam_res_copy_fmt_to_user(struct mtk_raw_pipeline *pipeline,
 			     struct mtk_cam_resource *res_user,
 			     struct v4l2_mbus_framefmt *src);
 
-bool mtk_raw_resource_calc(struct mtk_cam_device *cam,
-			   struct mtk_cam_resource_config *res,
-			   s64 pixel_rate, int res_plan,
-			   int in_w, int in_h, int *out_w, int *out_h);
 
 #ifdef CAMSYS_TF_DUMP_71_1
 int

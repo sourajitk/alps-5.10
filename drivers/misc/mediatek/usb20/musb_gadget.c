@@ -34,8 +34,6 @@
 #include "musb_qmu.h"
 #endif
 
-#include "musb_trace.h"
-
 #define FIFO_START_ADDR 512
 
 /* #define RX_DMA_MODE1 1 */
@@ -202,9 +200,6 @@ void musb_g_giveback(struct musb_ep *ep,
 	list_del(&req->list);
 	if (req->request.status == -EINPROGRESS)
 		req->request.status = status;
-
-	trace_musb_g_giveback(req);
-
 	musb = req->musb;
 
 	ep->busy = 1;
@@ -1484,8 +1479,6 @@ static int musb_gadget_enable
 
 	schedule_work(&musb->irq_work);
 
-	trace_musb_gadget_enable(musb_ep);
-
 fail:
 	spin_unlock_irqrestore(&musb->lock, flags);
 	return status;
@@ -1505,9 +1498,6 @@ static int musb_gadget_disable(struct usb_ep *ep)
 	u16 csr;
 
 	musb_ep = to_musb_ep(ep);
-
-	trace_musb_gadget_disable(musb_ep);
-
 	musb = musb_ep->musb;
 	epnum = musb_ep->current_epnum;
 	epio = musb->endpoints[epnum].regs;
@@ -1780,8 +1770,6 @@ static int musb_gadget_dequeue(struct usb_ep *ep, struct usb_request *request)
 	if (!ep || !request || to_musb_request(request)->ep != musb_ep)
 		return -EINVAL;
 
-	disable_irq_nosync(musb->nIrq);
-
 	spin_lock_irqsave(&musb->lock, flags);
 
 	list_for_each_entry(r, &musb_ep->req_list, list) {
@@ -1804,10 +1792,10 @@ static int musb_gadget_dequeue(struct usb_ep *ep, struct usb_request *request)
 			 ep->address);
 		musb_flush_qmu(musb_ep->hw_ep->epnum,
 				(musb_ep->is_in ? TXQ : RXQ));
-		mtk_qmu_enable(musb,
+		musb_g_giveback(musb_ep, request, -ECONNRESET);
+		musb_restart_qmu(musb,
 				musb_ep->hw_ep->epnum,
 				(musb_ep->is_in ? TXQ : RXQ));
-		musb_g_giveback(musb_ep, request, -ECONNRESET);
 	}
 #else
 	/* ... else abort the dma transfer ... */
@@ -1831,8 +1819,6 @@ static int musb_gadget_dequeue(struct usb_ep *ep, struct usb_request *request)
 
 done:
 	spin_unlock_irqrestore(&musb->lock, flags);
-
-	enable_irq(musb->nIrq);
 	return status;
 }
 
@@ -2446,8 +2432,7 @@ int musb_gadget_setup(struct musb *musb)
 
 	/* this "gadget" abstracts/virtualizes the controller */
 	musb->g.name = musb_driver_name;
-	/* Disable OTG, no need support now. */
-	musb->g.is_otg = 0;
+	musb->g.is_otg = 1;
 
 	musb_g_init_endpoints(musb);
 

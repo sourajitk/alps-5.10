@@ -10,6 +10,7 @@
 #include <linux/suspend.h>
 #include <linux/of_address.h>
 #include <linux/of_device.h>
+#include <linux/namei.h>
 #include "vdec_fmt_driver.h"
 #include "vdec_fmt_dmabuf.h"
 #include "vdec_fmt_pm.h"
@@ -57,14 +58,13 @@ static int fmt_lock(u32 id, bool sec)
 		usleep_range(10000, 20000);
 	}
 
-	//if (sec != false)
-	//	gce_status = GCE_SECURE;
-	//else
-	// FMT only support sec in TZMP flow, always use normal GCE
-	gce_status = GCE_NORMAL;
+	if (sec != false)
+		gce_status = GCE_SECURE;
+	else
+		gce_status = GCE_NORMAL;
 
-	fmt_debug(1, "id %d sec %d gce_status %d cur gce_status %d",
-				id, sec,
+	fmt_debug(1, "id %d gce_status %d cur gce_status %d",
+				id,
 				gce_status,
 				fmt->gce_status[id]);
 
@@ -607,6 +607,7 @@ static int fmt_gce_cmd_flush(unsigned long arg)
 		if (ret != 0L) {
 			fmt_err("fmt_clock_on failed!%d",
 			ret);
+			cmdq_mbox_disable(fmt->clt_fmt[0]->chan);
 			mutex_unlock(&fmt->mux_gce_th[identifier]);
 			mutex_unlock(&fmt->mux_fmt);
 			return -EINVAL;
@@ -1264,7 +1265,10 @@ static struct platform_driver vdec_fmt_driver = {
 static int __init fmt_init(void)
 {
 	int ret;
+	struct path path;
+	char *pathname = "/dev/fmt_sync";
 
+	fmt_debug(0, "+");
 	ret = platform_driver_register(&vdec_fmt_driver);
 	if (ret) {
 		fmt_err("failed to init fmt_device");
@@ -1274,6 +1278,14 @@ static int __init fmt_init(void)
 	ret = fmt_sync_device_init();
 	if (ret != 0)
 		fmt_debug(0, "fmt_sync init failed");
+	while (kern_path(pathname, LOOKUP_FOLLOW, &path))
+		;
+	fmt_debug(0, "get path success name:%s inode:%lu",
+		path.dentry->d_name.name,
+		path.dentry->d_inode);
+	path_put(&path);
+	fmt_debug(0, "-");
+
 	return 0;
 }
 static void __init fmt_exit(void)
@@ -1281,7 +1293,7 @@ static void __init fmt_exit(void)
 	platform_driver_unregister(&vdec_fmt_driver);
 }
 
-module_init(fmt_init);
+subsys_initcall(fmt_init);
 module_exit(fmt_exit);
 
 

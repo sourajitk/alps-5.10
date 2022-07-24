@@ -57,14 +57,6 @@ static void pd_log_dump(unsigned int id, unsigned int pwr_sta)
 	pdchk_ops->log_dump(id, pwr_sta);
 }
 
-static void pdchk_trace_power_event(unsigned int id, unsigned int pwr_sta)
-{
-	if (pdchk_ops == NULL || pdchk_ops->trace_power_event == NULL)
-		return;
-
-	pdchk_ops->trace_power_event(id, pwr_sta);
-}
-
 static struct pd_check_swcg *get_subsys_cg(unsigned int id)
 {
 	if (pdchk_ops == NULL || pdchk_ops->get_subsys_cg == NULL)
@@ -335,8 +327,6 @@ static int mtk_pd_dbg_dump(struct notifier_block *nb,
 		if (pd_sta[nb->priority] == POWER_ON_STA)
 			pd_log_dump(nb->priority, PD_PWR_ON);
 
-		pdchk_trace_power_event(nb->priority, POWER_ON_STA);
-
 		break;
 	case GENPD_NOTIFY_OFF:
 		if (pd_sta[nb->priority] == POWER_ON_STA) {
@@ -346,8 +336,6 @@ static int mtk_pd_dbg_dump(struct notifier_block *nb,
 		}
 		if (pd_sta[nb->priority] == POWER_OFF_STA)
 			pd_log_dump(nb->priority, PD_PWR_OFF);
-
-		pdchk_trace_power_event(nb->priority, POWER_OFF_STA);
 
 		break;
 	default:

@@ -28,6 +28,10 @@
 #include <trace/hooks/sysrqcrash.h>
 #include <trace/hooks/cgroup.h>
 #include <trace/hooks/sys.h>
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+#include <../kernel/oplus_perf_sched/sched_assist/sa_fair.h>
+#include <../kernel/oplus_perf_sched/sched_assist/sa_rwsem.h>
+#endif
 
 #include <task_turbo.h>
 
@@ -295,7 +299,7 @@ static void probe_android_vh_binder_set_priority(void *ignore, struct binder_tra
 {
 	if (binder_start_turbo_inherit(t->from ?
 			t->from->task : NULL, task)) {
-		t->android_vendor_data1 = (u64)task;
+		t->android_vendor_data1 = (s64)task;
 	}
 }
 
@@ -527,6 +531,16 @@ int find_best_turbo_cpu(struct task_struct *p)
 			    !cpu_active(iter_cpu))
 				continue;
 
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+			/*
+			 * TODO: If turbo task is ux task, should we add more conditions
+			 */
+			/*
+			if (should_ux_task_skip_cpu(p, iter_cpu))
+				continue;
+			*/
+#endif
+
 			/*
 			 * favor tasks that prefer idle cpus
 			 * to improve latency
@@ -618,11 +632,9 @@ int idle_cpu(int cpu)
 static void rwsem_stop_turbo_inherit(struct rw_semaphore *sem)
 {
 	unsigned long flags;
-	struct task_struct *inherit_task;
 
 	raw_spin_lock_irqsave(&sem->wait_lock, flags);
-	inherit_task = get_inherit_task(sem);
-	if (inherit_task == current) {
+	if ((struct task_struct *)&(sem)->android_vendor_data1 == current) {
 		stop_turbo_inherit(current, RWSEM_INHERIT);
 		sem->android_vendor_data1 = 0;
 		trace_turbo_inherit_end(current);
@@ -635,6 +647,11 @@ static void rwsem_list_add(struct task_struct *task,
 			   struct list_head *head)
 {
 	if (!sub_feat_enable(SUB_FEAT_LOCK)) {
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+		if (oplus_rwsem_list_add(task, entry, head)) {
+			return;
+		}
+#endif
 		list_add_tail(entry, head);
 		return;
 	}
@@ -654,6 +671,11 @@ static void rwsem_list_add(struct task_struct *task,
 			}
 		}
 	}
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+	if (oplus_rwsem_list_add(task, entry, head)) {
+		return;
+	}
+#endif
 	list_add_tail(entry, head);
 }
 
@@ -671,7 +693,7 @@ static void rwsem_start_turbo_inherit(struct rw_semaphore *sem)
 	if (should_inherit) {
 		inherited_owner = get_inherit_task(sem);
 		turbo_data = get_task_turbo_t(current);
-		if (owner && !is_rwsem_reader_owned(sem) &&
+		if (!is_rwsem_reader_owned(sem) &&
 		    !is_turbo_task(owner) &&
 		    !inherited_owner) {
 			start_turbo_inherit(owner,

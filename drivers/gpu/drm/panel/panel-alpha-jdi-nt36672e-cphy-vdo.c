@@ -90,11 +90,9 @@ static struct i2c_driver _lcm_i2c_driver = {
 /*****************************************************************************
  * Function
  *****************************************************************************/
-
 #ifdef VENDOR_EDIT
-// shifan@bsp.tp 20191226 add for loading tp fw when screen lighting on
 extern void lcd_queue_load_tp_fw(void);
-#endif /*VENDOR_EDIT*/
+#endif
 
 static int _lcm_i2c_probe(struct i2c_client *client,
 			  const struct i2c_device_id *id)
@@ -757,9 +755,8 @@ static int jdi_prepare(struct drm_panel *panel)
 #endif
 
 #ifdef VENDOR_EDIT
-	// shifan@bsp.tp 20191226 add for loading tp fw when screen lighting on
 	lcd_queue_load_tp_fw();
-#endif
+#endif 
 
 	pr_info("%s-\n", __func__);
 	return ret;
@@ -813,9 +810,9 @@ static const struct drm_display_mode default_mode = {
 	.hsync_end = 1080 + 76 + 12,//HSA
 	.htotal = 1080 + 76 + 12 + 80,//HBP
 	.vdisplay = 2400,
-	.vsync_start = 2400 + 3524,//VFP
-	.vsync_end = 2400 + 3524 + 10,//VSA
-	.vtotal = 2400 + 3524 + 10 + 10,//VBP 4948
+	.vsync_start = 2400 + 540,//VFP
+	.vsync_end = 2400 + 540 + 10,//VSA
+	.vtotal = 2400 + 540 + 10 + 10,//VBP 4948
 };
 
 static const struct drm_display_mode performance_mode = {
@@ -825,28 +822,28 @@ static const struct drm_display_mode performance_mode = {
 	.hsync_end = 1080 + 76 + 12,//HSA
 	.htotal = 1080 + 76 + 12 + 80,//HBP
 	.vdisplay = 2400,
-	.vsync_start = 2400 + 1542,//VFP
-	.vsync_end = 2400 + 1542 + 10,//VSA
-	.vtotal = 2400 + 1542 + 10 + 10,//VBP
+	.vsync_start = 2400 + 540,//VFP
+	.vsync_end = 2400 + 540 + 10,//VSA
+	.vtotal = 2400 + 540 + 10 + 10,//VBP
 };
 #endif
 static const struct drm_display_mode performance_mode1 = {
-	.clock = 437299,
+	.clock = 443290,
 	.hdisplay = 1080,
 	.hsync_start = 1080 + 76,//HFP
 	.hsync_end = 1080 + 76 + 12,//HSA
-	.htotal = 1080 + 76 + 12 + 80,//HBP 1248
+	.htotal = 1080 + 76 + 12 + 80,//HBP
 	.vdisplay = 2400,
-	.vsync_start = 2400 + 500,//VFP
-	.vsync_end = 2400 + 500 + 10,//VSA
-	.vtotal = 2400 + 500 + 10 + 10,//VBP 2920
+	.vsync_start = 2400 + 540,//VFP
+	.vsync_end = 2400 + 540 + 10,//VSA
+	.vtotal = 2400 + 540 + 10 + 10,//VBP 2474
 };
 
 
 #if defined(CONFIG_MTK_PANEL_EXT)
 static struct mtk_panel_params ext_params = {
 	.pll_clk = 422,
-	.vfp_low_power = 5500,//45hz
+//	.vfp_low_power = 879,//45hz
 	.cust_esd_check = 0,
 	.esd_check_enable = 1,
 	.lcm_esd_check_table[0] = {
@@ -918,7 +915,7 @@ static struct mtk_panel_params ext_params = {
 
 static struct mtk_panel_params ext_params_90hz = {
 	.pll_clk = 422,
-	.vfp_low_power = 3524,//60hz
+	.vfp_low_power = 1294,//60hz
 	.cust_esd_check = 0,
 	.esd_check_enable = 1,
 	.lcm_esd_check_table[0] = {
@@ -991,7 +988,7 @@ static struct mtk_panel_params ext_params_90hz = {
 
 static struct mtk_panel_params ext_params_120hz = {
 	.pll_clk = 422,
-	.vfp_low_power = 3524,//idle 60hz
+	.vfp_low_power = 2528,//idle 60hz
 	.cust_esd_check = 0,
 	.esd_check_enable = 1,
 	.lcm_esd_check_table[0] = {

@@ -185,10 +185,8 @@ static irqreturn_t emimpu_violation_irq(int irq, void *dev_id)
 					violation = true;
 			}
 
-			if (!violation) {
-				pr_info("%s: emi:%d smpu = 0", __func__, emi_id);
-				goto clear_violation;
-			}
+			if (!violation)
+				continue;
 		}
 
 		/*
@@ -274,7 +272,7 @@ clear_violation:
 	}
 
 	if (nr_vio) {
-		pr_info("%s: %s", __func__, mpu->vio_msg);
+		printk_deferred("%s: %s", __func__, mpu->vio_msg);
 		mpu->in_msg_dump = 1;
 		schedule_work(&emimpu_work);
 	}

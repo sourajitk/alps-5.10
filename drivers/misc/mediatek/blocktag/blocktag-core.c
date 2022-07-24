@@ -31,7 +31,6 @@
 #include <linux/vmstat.h>
 #include <trace/events/block.h>
 #include <trace/events/writeback.h>
-#include <linux/math64.h>
 
 #define BLOCKIO_MIN_VER	"3.09"
 
@@ -1323,10 +1322,8 @@ static void mtk_btag_seq_main_info(char **buff, unsigned long *size,
 	mtk_btag_blk_pm_show(buff, size, seq);
 #endif
 #if IS_ENABLED(CONFIG_MTK_FSCMD_TRACER)
-	if (!buff) {
-		SPREAD_PRINTF(buff, size, seq, "[FS_CMD]\n");
-		mtk_fscmd_show(buff, size, seq);
-	}
+	SPREAD_PRINTF(buff, size, seq, "[FS_CMD]\n");
+	mtk_fscmd_show(buff, size, seq);
 #endif
 	SPREAD_PRINTF(buff, size, seq, "[Memory Usage]\n");
 	list_for_each_entry_safe(btag, n, &mtk_btag_list, list)
@@ -1541,7 +1538,8 @@ int mtk_btag_mictx_get_data(
 	if (mictx->idle_begin)
 		mictx->idle_total += (time_cur - mictx->idle_begin);
 
-	iostat->wl = 100 - div64_u64((mictx->idle_total * 100), dur);
+	iostat->wl = 100 -
+		((__u32)((mictx->idle_total >> 10) * 100) / (__u32)(dur >> 10));
 
 	/* calculate top ratio */
 	if (mictx->req.r.size || mictx->req.w.size) {
@@ -1563,7 +1561,8 @@ int mtk_btag_mictx_get_data(
 	if (btag && btag->vops->mictx_eval_wqd) {
 		btag->vops->mictx_eval_wqd(mictx, time_cur);
 		iostat->q_depth =
-			DIV64_U64_ROUND_UP(mictx->weighted_qd, dur);
+			DIV_ROUND_UP((u32)(mictx->weighted_qd >> 10),
+				     (u32)(dur >> 10));
 	} else
 		iostat->q_depth = mictx->q_depth;
 
@@ -1852,18 +1851,6 @@ static struct tracepoints_table interests[] = {
 		.name = "sys_exit",
 		.func = fscmd_trace_sys_exit
 	},
-	{
-		.name = "f2fs_write_checkpoint",
-		.func = fscmd_trace_f2fs_write_checkpoint
-	},
-		{
-		.name = "f2fs_gc_begin",
-		.func = fscmd_trace_f2fs_gc_begin
-	},
-		{
-		.name = "f2fs_gc_end",
-		.func = fscmd_trace_f2fs_gc_end
-	},
 #endif
 };
 
@@ -1924,6 +1911,7 @@ static int __init mtk_btag_init(void)
 	mtk_btag_init_memory();
 	mtk_btag_init_pidlogger();
 	mtk_btag_init_procfs();
+	mtk_btag_install_tracepoints();
 	mtk_btag_earaio_init();
 #if IS_ENABLED(CONFIG_MTK_FSCMD_TRACER)
 	mtk_fscmd_init();
@@ -1932,7 +1920,7 @@ static int __init mtk_btag_init(void)
 #if IS_ENABLED(CONFIG_MTK_BLOCK_IO_PM_DEBUG)
 	mtk_btag_blk_pm_init();
 #endif
-	mtk_btag_install_tracepoints();
+
 	mrdump_set_extra_dump(AEE_EXTRA_FILE_BLOCKIO, mtk_btag_get_aee_buffer);
 
 	return 0;

@@ -400,8 +400,6 @@ struct hif_dpmaif_ctrl {
 	unsigned int dl_pit_entry_size;
 	unsigned int dl_bat_size;
 	unsigned int dl_pit_size;
-	/* gro_config:0 disable;1 enable */
-	unsigned int gro_config;
 };
 
 #ifndef CCCI_KMODULE_ENABLE
@@ -510,16 +508,12 @@ extern struct regmap *syscon_regmap_lookup_by_phandle(struct device_node *np,
 	const char *property);
 extern int regmap_write(struct regmap *map, unsigned int reg, unsigned int val);
 extern int regmap_read(struct regmap *map, unsigned int reg, unsigned int *val);
+extern void ccmni_set_cur_speed(u64 cur_dl_speed);
 
 #if IS_ENABLED(CONFIG_MTK_IRQ_DBG)
 extern void mt_irq_dump_status(unsigned int irq);
 #endif
 
 extern void ccmni_set_cur_speed(u64 cur_dl_speed);
-
-#if IS_ENABLED(CONFIG_MTK_AEE_IPANIC)
-extern int mrdump_mini_add_extra_file(unsigned long vaddr, unsigned long paddr,
-	unsigned long size, const char *name);
-#endif
 
 #endif				/* __MODEM_DPMA_H__ */

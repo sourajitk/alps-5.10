@@ -10,6 +10,10 @@
 #include "common.h"
 #include <linux/stop_machine.h>
 #include <linux/kthread.h>
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+#include <../kernel/oplus_perf_sched/sched_assist/sa_fair.h>
+#endif
+
 #if IS_ENABLED(CONFIG_MTK_THERMAL_INTERFACE)
 #include <thermal_interface.h>
 #endif
@@ -443,11 +447,16 @@ void mtk_find_energy_efficient_cpu(void *data, struct task_struct *p, int prev_c
 		for(i = 0; i < cnt; i++) {
 			cpu = cpu_order[i];
 #else
-		for_each_cpu_and(cpu, perf_domain_span(pd), cpu_active_mask) {
+		for_each_cpu_and(cpu, perf_domain_span(pd), cpu_online_mask) {
 #endif
 
 			if (!cpumask_test_cpu(cpu, p->cpus_ptr))
 				continue;
+
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+			if (should_ux_task_skip_cpu(p, cpu))
+				continue;
+#endif
 
 			util = cpu_util_next(cpu, p, cpu);
 			cpu_cap = capacity_of(cpu);
@@ -576,6 +585,12 @@ fail:
 
 	*new_cpu = -1;
 done:
+
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+	if (set_ux_task_to_prefer_cpu(p, new_cpu)) {
+		select_reason = LB_UX_PREFER;
+	}
+#endif
 	trace_sched_find_energy_efficient_cpu(best_delta, best_energy_cpu,
 			best_idle_cpu, idle_max_spare_cap_cpu, sys_max_spare_cap_cpu);
 	trace_sched_select_task_rq(p, select_reason, prev_cpu, *new_cpu,
@@ -608,6 +623,11 @@ static struct task_struct *detach_a_hint_task(struct rq *src_rq, int dst_cpu)
 
 		if (task_running(src_rq, p))
 			continue;
+
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+		if (should_ux_task_skip_cpu(p, dst_cpu))
+			continue;
+#endif
 
 		task_util = uclamp_task_util(p);
 
@@ -682,15 +702,10 @@ static int mtk_active_load_balance_cpu_stop(void *data)
 	/* Is there any task to move? */
 	if (busiest_rq->nr_running <= 1)
 		goto out_unlock;
-
-	spin_lock(&per_cpu(cpufreq_idle_cpu_lock, target_cpu));
 	if (!per_cpu(cpufreq_idle_cpu, target_cpu) &&
-		is_task_latency_sensitive(target_task)) {
-		spin_unlock(&per_cpu(cpufreq_idle_cpu_lock, target_cpu));
+		is_task_latency_sensitive(target_task))
 		goto out_unlock;
-	}
 
-	spin_unlock(&per_cpu(cpufreq_idle_cpu_lock, target_cpu));
 	update_rq_clock(busiest_rq);
 	deactivate_task(busiest_rq, target_task, DEQUEUE_NOCLOCK);
 	set_task_cpu(target_task, target_cpu);
@@ -778,7 +793,7 @@ void mtk_sched_newidle_balance(void *data, struct rq *this_rq, struct rq_flags *
 	raw_spin_unlock(&this_rq->lock);
 
 	this_cpu = this_rq->cpu;
-	for_each_cpu(cpu, cpu_active_mask) {
+	for_each_cpu(cpu, cpu_online_mask) {
 		if (cpu == this_cpu)
 			continue;
 

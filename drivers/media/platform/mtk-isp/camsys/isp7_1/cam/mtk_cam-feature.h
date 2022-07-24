@@ -9,7 +9,6 @@
 #include "mtk_cam.h"
 #include "mtk_cam-raw.h"
 
-
 static inline bool mtk_cam_feature_is_mstream_m2m(int feature)
 {
 	int raw_feature;
@@ -20,22 +19,6 @@ static inline bool mtk_cam_feature_is_mstream_m2m(int feature)
 	raw_feature = feature & MTK_CAM_FEATURE_HDR_MASK;
 	if (raw_feature == MSTREAM_NE_SE ||
 			raw_feature == MSTREAM_SE_NE)
-		return true;
-
-	return false;
-}
-
-static inline bool mtk_cam_feature_is_ext_isp_yuv(int feature)
-{
-	if (feature == EXT_ISP_CUS_2)
-		return true;
-
-	return false;
-}
-
-static inline bool mtk_cam_feature_is_ext_isp(int feature)
-{
-	if (feature & MTK_CAM_FEATURE_EXT_ISP_MASK)
 		return true;
 
 	return false;
@@ -154,28 +137,6 @@ static inline bool mtk_cam_feature_is_switchable_hdr(int feature)
 	return mtk_cam_feature_is_stagger(feature) || mtk_cam_feature_is_mstream(feature);
 }
 
-static inline bool mtk_cam_hw_mode_is_otf(int hw_mode)
-{
-	return (hw_mode == HW_MODE_ON_THE_FLY);
-}
-
-static inline bool mtk_cam_hw_mode_is_dc(int hw_mode)
-{
-	return (hw_mode == HW_MODE_DIRECT_COUPLED);
-}
-
-static inline bool mtk_cam_hw_mode_is_offline(int hw_mode)
-{
-	return (hw_mode == HW_MODE_OFFLINE);
-}
-
-static inline bool mtk_cam_hw_mode_is_m2m(int hw_mode)
-{
-	return (hw_mode == HW_MODE_M2M);
-}
-
-bool mtk_cam_is_ext_isp_yuv(struct mtk_cam_ctx *ctx);
-bool mtk_cam_is_ext_isp(struct mtk_cam_ctx *ctx);
 bool mtk_cam_is_time_shared(struct mtk_cam_ctx *ctx);
 bool mtk_cam_is_hsf(struct mtk_cam_ctx *ctx);
 bool mtk_cam_is_m2m(struct mtk_cam_ctx *ctx);
@@ -193,12 +154,4 @@ bool mtk_cam_is_with_w_channel(struct mtk_cam_ctx *ctx);
 int mtk_cam_get_sensor_exposure_num(u32 raw_feature);
 int mtk_cam_get_feature_switch(struct mtk_raw_pipeline *raw_pipe,
 			       int prev);
-
-bool mtk_cam_hw_is_otf(struct mtk_cam_ctx *ctx);
-bool mtk_cam_hw_is_dc(struct mtk_cam_ctx *ctx);
-bool mtk_cam_hw_is_offline(struct mtk_cam_ctx *ctx);
-bool mtk_cam_hw_is_m2m(struct mtk_cam_ctx *ctx);
-
-bool mtk_cam_is_srt(int hw_mode);
-
 #endif /*__MTK_CAM_FEATURE_H */

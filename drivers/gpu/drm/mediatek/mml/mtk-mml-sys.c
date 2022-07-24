@@ -131,9 +131,8 @@ struct mml_sys {
 	struct device *master;
 	/* adaptor for display addon config */
 	struct mml_dle_ctx *dle_ctx;
-	struct mml_dle_param dle_param;
 	/* addon status */
-	const struct mml_topology_path *ddp_path[MML_PIPE_CNT];
+	bool ddp_connected[MML_PIPE_CNT];
 
 	/* racing mode pipe sync event */
 	u16 event_racing_pipe0;
@@ -684,14 +683,14 @@ static void sys_config_done_cb(struct mml_task *task, void *cb_param)
 	mml_msg("%s mml task:%p", __func__, cfg->task);
 }
 
-static struct mml_dle_ctx *sys_get_dle_ctx(struct mml_sys *sys,
-					   struct mml_dle_param *dl)
+static struct mml_dle_ctx *sys_get_dle_ctx(struct mml_sys *sys)
 {
-	if (dl && (!sys->dle_ctx ||
-	    memcmp(&sys->dle_param, dl, sizeof(*dl)))) {
-		mml_dle_put_context(sys->dle_ctx);
-		sys->dle_ctx = mml_dle_get_context(sys->master, dl);
-		sys->dle_param = *dl;
+	struct mml_dle_param dl;
+
+	if (!sys->dle_ctx) {
+		dl.dual = false;
+		dl.config_cb = sys_config_done_cb;
+		sys->dle_ctx = mml_dle_get_context(sys->master, &dl);
 	}
 	return sys->dle_ctx;
 }
@@ -713,7 +712,6 @@ static void ddp_command_make(struct mml_task *task, u32 pipe,
 	struct mml_comp *comp;
 	u32 i;
 
-	/* borrow task pkt pointer */
 	task->pkts[pipe] = pkt;
 
 	/* call all component init and frame op, include mmlsys and mutex */
@@ -729,60 +727,6 @@ static void ddp_command_make(struct mml_task *task, u32 pipe,
 		comp = path->nodes[i].comp;
 		call_cfg_op(comp, tile, task, &ccfg[i], 0);
 	}
-
-	/* return task pkt pointer */
-	task->pkts[pipe] = NULL;
-}
-
-static void sys_ddp_disable_locked(struct mml_sys *sys, u32 pipe)
-{
-	const struct mml_topology_path *path = sys->ddp_path[pipe];
-	struct mml_comp *comp;
-	u32 i;
-
-	mml_trace_ex_begin("%s_%s_%u", __func__, "clk", pipe);
-	for (i = 0; i < path->node_cnt; i++) {
-		if (i == path->mmlsys_idx || i == path->mutex_idx)
-			continue;
-		comp = path->nodes[i].comp;
-		call_hw_op(comp, clk_disable);
-	}
-
-	if (path->mutex)
-		call_hw_op(path->mutex, clk_disable);
-	if (path->mmlsys)
-		call_hw_op(path->mmlsys, clk_disable);
-	mml_trace_ex_end();
-
-	mml_trace_ex_begin("%s_%s_%u", __func__, "pw", pipe);
-	for (i = 0; i < path->node_cnt; i++) {
-		comp = path->nodes[i].comp;
-		call_hw_op(comp, pw_disable);
-	}
-	mml_trace_ex_end();
-}
-
-static void sys_ddp_disable(struct mml_sys *sys, struct mml_task *task, u32 pipe)
-{
-	const struct mml_topology_path *path = task->config->path[pipe];
-
-	mml_clock_lock(task->config->mml);
-
-	/* path disconnected */
-	if (!sys->ddp_path[pipe])
-		goto disabled;
-	/* check task path */
-	if (path != sys->ddp_path[pipe])
-		mml_log("[warn]%s task path found %p was not path connected %p",
-			__func__, path, sys->ddp_path[pipe]);
-
-	sys_ddp_disable_locked(sys, pipe);
-	sys->ddp_path[pipe] = NULL;
-
-disabled:
-	mml_clock_unlock(task->config->mml);
-
-	mml_msg("%s task %p pipe %u", __func__, task, pipe);
 }
 
 static void sys_ddp_enable(struct mml_sys *sys, struct mml_task *task, u32 pipe)
@@ -795,9 +739,9 @@ static void sys_ddp_enable(struct mml_sys *sys, struct mml_task *task, u32 pipe)
 
 	mml_clock_lock(task->config->mml);
 
-	/* path connected */
-	if (path == sys->ddp_path[pipe])
+	if (sys->ddp_connected[pipe])
 		goto enabled;
+	sys->ddp_connected[pipe] = true;
 
 	mml_trace_ex_begin("%s_%s_%u", __func__, "pw", pipe);
 	for (i = 0; i < path->node_cnt; i++) {
@@ -820,15 +764,49 @@ static void sys_ddp_enable(struct mml_sys *sys, struct mml_task *task, u32 pipe)
 	}
 	mml_trace_ex_end();
 
-	/* disable old path */
-	if (sys->ddp_path[pipe])
-		sys_ddp_disable_locked(sys, pipe);
-	sys->ddp_path[pipe] = path;
-
 	cmdq_util_prebuilt_init(CMDQ_PREBUILT_MML);
 
 enabled:
 	mml_clock_unlock(task->config->mml);
+}
+
+static void sys_ddp_disable(struct mml_sys *sys, struct mml_task *task, u32 pipe)
+{
+	const struct mml_topology_path *path = task->config->path[pipe];
+	struct mml_comp *comp;
+	u32 i;
+
+	mml_clock_lock(task->config->mml);
+
+	if (!sys->ddp_connected[pipe])
+		goto disabled;
+	sys->ddp_connected[pipe] = false;
+
+	mml_trace_ex_begin("%s_%s_%u", __func__, "clk", pipe);
+	for (i = 0; i < path->node_cnt; i++) {
+		if (i == path->mmlsys_idx || i == path->mutex_idx)
+			continue;
+		comp = path->nodes[i].comp;
+		call_hw_op(comp, clk_disable);
+	}
+
+	if (path->mutex)
+		call_hw_op(path->mutex, clk_disable);
+	if (path->mmlsys)
+		call_hw_op(path->mmlsys, clk_disable);
+	mml_trace_ex_end();
+
+	mml_trace_ex_begin("%s_%s_%u", __func__, "pw", pipe);
+	for (i = 0; i < path->node_cnt; i++) {
+		comp = path->nodes[i].comp;
+		call_hw_op(comp, pw_disable);
+	}
+	mml_trace_ex_end();
+
+disabled:
+	mml_clock_unlock(task->config->mml);
+
+	mml_msg("%s task %p pipe %u", __func__, task, pipe);
 }
 
 static const struct mml_submit bypass_submit = {
@@ -865,76 +843,38 @@ static const struct mml_submit bypass_submit = {
 	},
 };
 
-static void sys_calc_cfg(struct mtk_ddp_comp *ddp_comp,
-			 union mtk_addon_config *addon_config,
-			 struct cmdq_pkt *pkt)
+static void sys_addon_connect(struct mml_sys *sys,
+			      struct mtk_addon_mml_config *cfg,
+			      struct cmdq_pkt *pkt)
 {
-	struct mml_sys *sys = ddp_comp_to_sys(ddp_comp);
-	struct mtk_addon_mml_config *cfg = &addon_config->addon_mml_config;
 	struct mml_dle_ctx *ctx;
-	struct mml_dle_param dl;
-	struct mml_dle_frame_info info = {0};
-	struct mml_tile_output **outputs;
-	s32 i, pipe_cnt = cfg->dual ? 2 : 1;
+	u32 pipe;
 	s32 ret;
-
-	mml_msg("%s module:%d", __func__, cfg->config_type.module);
 
 	if (!cfg->submit.info.src.width) {
 		/* set test submit */
 		cfg->submit = bypass_submit;
 	}
 
-	dl.dual = cfg->dual;
-	dl.config_cb = sys_config_done_cb;
-	ctx = sys_get_dle_ctx(sys, &dl);
-	if (IS_ERR(ctx)) {
-		mml_err("%s fail to get mml ctx", __func__);
-		return;
-	}
+	if (cfg->config_type.module == MML_RSZ_v2) {
+		pipe = 1;
+	} else {
+		pipe = 0;
 
-	for (i = 0; i < pipe_cnt; i++) {
-		info.dl_out[i].left = cfg->mml_dst_roi[i].x;
-		info.dl_out[i].top = cfg->mml_dst_roi[i].y;
-		info.dl_out[i].width = cfg->mml_dst_roi[i].width;
-		info.dl_out[i].height = cfg->mml_dst_roi[i].height;
-	}
-	ret = mml_dle_config(ctx, &cfg->submit, &info, cfg);
-	if (ret) {
-		mml_err("%s config fail", __func__);
-		return;
+		ctx = sys_get_dle_ctx(sys);
+		if (IS_ERR(ctx)) {
+			mml_err("fail to get mml ctx for addon config");
+			return;
+		}
+
+		ret = mml_dle_config(ctx, &cfg->submit, cfg);
+		if (ret) {
+			mml_err("%s config fail", __func__);
+			return;
+		}
 	}
 
 	/* wait submit_done */
-	if (!cfg->task || !cfg->task->config->tile_output[pipe_cnt - 1]) {
-		mml_err("%s no tiles for task %p pipe_cnt %d", __func__,
-			cfg->task, pipe_cnt);
-		/* avoid disp exception */
-		for (i = 0; i < pipe_cnt; i++)
-			cfg->mml_src_roi[i] = cfg->mml_dst_roi[i];
-		return;
-	}
-
-	outputs = cfg->task->config->tile_output;
-	for (i = 0; i < pipe_cnt; i++) {
-		cfg->mml_src_roi[i].x = outputs[i]->src_crop.left;
-		cfg->mml_src_roi[i].y = outputs[i]->src_crop.top;
-		cfg->mml_src_roi[i].width = outputs[i]->src_crop.width;
-		cfg->mml_src_roi[i].height = outputs[i]->src_crop.height;
-	}
-}
-
-static void sys_addon_connect(struct mml_sys *sys,
-			      struct mtk_addon_mml_config *cfg,
-			      struct cmdq_pkt *pkt)
-{
-	u32 pipe;
-
-	if (cfg->config_type.module == DISP_INLINE_ROTATE_1)
-		pipe = 1;
-	else
-		pipe = 0;
-
 	if (!cfg->task || !cfg->task->config->tile_output[pipe]) {
 		mml_err("%s no tile for task %p pipe %u", __func__,
 			cfg->task, pipe);
@@ -952,14 +892,14 @@ static void sys_addon_disconnect(struct mml_sys *sys,
 	struct mml_dle_ctx *ctx;
 	u32 pipe;
 
-	if (cfg->config_type.module == DISP_INLINE_ROTATE_1) {
+	if (cfg->config_type.module == MML_RSZ_v2) {
 		pipe = 1;
 	} else {
 		pipe = 0;
 
-		ctx = sys_get_dle_ctx(sys, NULL);
-		if (IS_ERR_OR_NULL(ctx)) {
-			mml_err("%s fail to get mml ctx", __func__);
+		ctx = sys_get_dle_ctx(sys);
+		if (IS_ERR(ctx)) {
+			mml_err("fail to get mml ctx for addon config");
 			return;
 		}
 
@@ -988,7 +928,7 @@ static void sys_addon_config(struct mtk_ddp_comp *ddp_comp,
 	struct mml_sys *sys = ddp_comp_to_sys(ddp_comp);
 	struct mtk_addon_mml_config *cfg = &addon_config->addon_mml_config;
 
-	mml_msg("%s type:%d", __func__, cfg->config_type.type);
+	mml_msg("%s %d", __func__, cfg->config_type.type);
 	if (cfg->config_type.type == ADDON_DISCONNECT)
 		sys_addon_disconnect(sys, cfg);
 	else
@@ -998,10 +938,11 @@ static void sys_addon_config(struct mtk_ddp_comp *ddp_comp,
 static void sys_start(struct mtk_ddp_comp *ddp_comp, struct cmdq_pkt *pkt)
 {
 	struct mml_sys *sys = ddp_comp_to_sys(ddp_comp);
-	struct mml_dle_ctx *ctx = sys_get_dle_ctx(sys, NULL);
+	struct mml_dle_ctx *ctx;
 
-	if (IS_ERR_OR_NULL(ctx)) {
-		mml_err("%s fail to get mml ctx", __func__);
+	ctx = sys_get_dle_ctx(sys);
+	if (IS_ERR(ctx)) {
+		mml_err("fail to get mml ctx for addon config");
 		return;
 	}
 
@@ -1011,11 +952,12 @@ static void sys_start(struct mtk_ddp_comp *ddp_comp, struct cmdq_pkt *pkt)
 static void sys_unprepare(struct mtk_ddp_comp *ddp_comp)
 {
 	struct mml_sys *sys = ddp_comp_to_sys(ddp_comp);
-	struct mml_dle_ctx *ctx = sys_get_dle_ctx(sys, NULL);
+	struct mml_dle_ctx *ctx;
 	struct mml_task *task;
 
-	if (IS_ERR_OR_NULL(ctx)) {
-		mml_log("%s fail to get mml ctx", __func__);
+	ctx = sys_get_dle_ctx(sys);
+	if (IS_ERR(ctx)) {
+		mml_err("fail to get mml ctx for addon config");
 		return;
 	}
 
@@ -1031,7 +973,6 @@ static void sys_unprepare(struct mtk_ddp_comp *ddp_comp)
 }
 
 static const struct mtk_ddp_comp_funcs sys_ddp_funcs = {
-	.mml_calc_cfg = sys_calc_cfg,
 	.addon_config = sys_addon_config,
 	.start = sys_start,
 	.unprepare = sys_unprepare,
@@ -1056,34 +997,20 @@ static const struct mml_comp_tile_ops dli_tile_ops = {
 	.prepare = dli_tile_prepare,
 };
 
-static void dlo_config_left(struct mml_frame_config *cfg,
-			    struct mml_frame_dest *dest,
+static void dlo_config_left(struct mml_frame_dest *dest,
 			    struct dlo_tile_data *data)
 {
 	data->enable_x_crop = true;
-	data->crop.left = 0;
-	data->crop.width = cfg->dl_out[0].width;
-	if (data->crop.width == 0 || data->crop.width >= dest->compose.width ||
-	    cfg->dl_out[0].height != dest->compose.height)
-		mml_err("dlo[0] (%u, %u, %u, %u) cannot match compose (%u, %u)",
-			data->crop.left, 0, data->crop.width, cfg->dl_out[0].height,
-			dest->compose.width, dest->compose.height);
+	data->crop_left = 0;
+	data->crop_width = dest->data.width >> 1;
 }
 
-static void dlo_config_right(struct mml_frame_config *cfg,
-			     struct mml_frame_dest *dest,
+static void dlo_config_right(struct mml_frame_dest *dest,
 			     struct dlo_tile_data *data)
 {
 	data->enable_x_crop = true;
-	data->crop.left = cfg->dl_out[0].width;
-	data->crop.width = cfg->dl_out[1].width;
-	if (data->crop.left != cfg->dl_out[1].left - cfg->dl_out[0].left ||
-	    data->crop.left + data->crop.width != dest->compose.width ||
-	    cfg->dl_out[1].height != dest->compose.height)
-		mml_err("dlo[1] (%u, %u, %u, %u) cannot match compose (%u, %u) left %u",
-			data->crop.left, 0, data->crop.width, cfg->dl_out[1].height,
-			dest->compose.width, dest->compose.height,
-			cfg->dl_out[1].left - cfg->dl_out[0].left);
+	data->crop_left = dest->data.width >> 1;
+	data->crop_width = dest->data.width - data->crop_left;
 }
 
 static s32 dlo_tile_prepare(struct mml_comp *comp, struct mml_task *task,
@@ -1091,18 +1018,18 @@ static s32 dlo_tile_prepare(struct mml_comp *comp, struct mml_task *task,
 			    struct tile_func_block *func,
 			    union mml_tile_data *data)
 {
-	struct mml_frame_config *cfg = task->config;
-	struct mml_frame_dest *dest = &cfg->info.dest[ccfg->node->out_idx];
+	struct mml_frame_dest *dest = &task->config->info.dest[ccfg->node->out_idx];
 
-	if (cfg->dual) {
+	if (task->config->dual) {
 		if (ccfg->pipe == 0)
-			dlo_config_left(cfg, dest, &data->dlo);
+			dlo_config_left(dest, &data->dlo);
 		else
-			dlo_config_right(cfg, dest, &data->dlo);
-	} else {
-		data->dlo.crop.width = dest->compose.width;
+			dlo_config_right(dest, &data->dlo);
 	}
-	data->dlo.crop.height = dest->compose.height;
+	func->full_size_x_in = dest->data.width;
+	func->full_size_y_in = dest->data.height;
+	func->full_size_x_out = dest->data.width;
+	func->full_size_y_out = dest->data.height;
 
 	func->type = TILE_TYPE_WDMA;
 	func->back_func = tile_dlo_back;

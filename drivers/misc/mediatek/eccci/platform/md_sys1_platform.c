@@ -232,7 +232,10 @@ static void md_cd_dump_debug_register(struct ccci_modem *md)
 	}
 
 	md_cd_lock_modem_clock_src(1);
-	md_dump_reg(md->index);
+
+	if (md_cd_plat_val_ptr.md_gen >= 6298)
+		md_dump_reg(md->index);
+
 	md_cd_lock_modem_clock_src(0);
 
 }
@@ -401,7 +404,7 @@ int md1_revert_sequencer_setting(struct ccci_modem *md)
 	int count = 0;
 
 	CCCI_NORMAL_LOG(md->index, TAG,
-		"[POWER OFF] %s start\n", __func__);
+		"[POWER OFF] %s start exp5\n", __func__);
 
 	if (!(md_cd_plat_val_ptr.power_flow_config & (1 << REVERT_SEQUENCER_BIT))) {
 		CCCI_BOOTUP_LOG(md->index, TAG,
@@ -443,9 +446,7 @@ int md1_revert_sequencer_setting(struct ccci_modem *md)
 	CCCI_NORMAL_LOG(md->index, TAG,
 		"[POWER OFF] wait sequencer done\n");
 
-	/* revert mux of sequencer to AOC1.0 */
 	ccci_write32(reg, 0x208, 0x5000D);
-
 	CCCI_NORMAL_LOG(md->index, TAG,
 		"[POWER OFF] %s end\n", __func__);
 
@@ -953,11 +954,63 @@ SET_PLL_END:
 
 }
 
+struct tag_chipid {
+	u32 size;
+	u32 hw_code;
+	u32 hw_subcod;
+	u32 hw_ver;
+	u32 sw_ver;
+};
+
+unsigned int get_chip_id_from_dts(void)
+{
+	struct device_node *np_chosen = NULL;
+	struct tag_chipid *tag = NULL;
+	static int ap_sw_chipid = -1;
+
+	if (ap_sw_chipid >= 0) {
+		CCCI_NORMAL_LOG(-1, TAG,
+			"[%s] ap_sw_chipid: 0x%x\n", __func__, ap_sw_chipid);
+		return ap_sw_chipid;
+	}
+
+	np_chosen = of_find_node_by_path("/chosen");
+	if (!np_chosen) {
+		CCCI_ERROR_LOG(-1, TAG, "warning: not find node: '/chosen'\n");
+
+		np_chosen = of_find_node_by_path("/chosen@0");
+		if (!np_chosen) {
+			CCCI_ERROR_LOG(-1, TAG,
+				"[%s] error: not find node: '/chosen@0'\n",
+				__func__);
+			return 0;
+		}
+	}
+
+	tag = (struct tag_chipid *)
+			of_get_property(np_chosen, "atag,chipid", NULL);
+	if (!tag) {
+		CCCI_ERROR_LOG(-1, TAG,
+			"[%s] error: not find tag: 'atag,chipid';\n", __func__);
+		return 0;
+	}
+
+	ap_sw_chipid = tag->sw_ver;
+	CCCI_NORMAL_LOG(-1, TAG,
+		"[%s] chip_id: 0x%x ap_sw_chipid: 0x%x\n",
+		__func__, tag->hw_code, tag->sw_ver);
+
+	return ap_sw_chipid;
+}
+
 static void md_pll_setting(struct ccci_modem *md)
 {
 	int ret = 0;
+	int chip_id = 0;
 
-	if (!(md_cd_plat_val_ptr.power_flow_config & (1 << MD_PLL_SETTING)))
+	chip_id = get_chip_id_from_dts();
+	if (chip_id >= 0x0001 || //only e1 need it
+		!(md_cd_plat_val_ptr.power_flow_config & (1 << MD_PLL_SETTING)))
 		return;
 
 	CCCI_BOOTUP_LOG(md->index, TAG, "[POWER ON] %s start\n", __func__);
@@ -1063,10 +1116,10 @@ static int md_cd_let_md_go(struct ccci_modem *md)
 	arm_smccc_smc(MTK_SIP_KERNEL_CCCI_CONTROL, MD_POWER_CONFIG,
 		MD_KERNEL_BOOT_UP, 0, 0, 0, 0, 0, &res);
 	CCCI_BOOTUP_LOG(md->index, TAG,
-		"[POWER ON]set MD boot slave done: ret=%lx, boot_status_0=%lx, boot_status_1=%lx, boot_slave = %lx\n",
+		"[POWER ON]set MD boot slave done: ret=%lu, boot_status_0=%lu, boot_status_1=%lu, boot_slave = %lu\n",
 		res.a0, res.a1, res.a2, res.a3);
 	CCCI_NORMAL_LOG(md->index, TAG,
-		"[POWER ON]set MD boot slave done: ret=%lx, boot_status_0=%lx, boot_status_1=%lx, boot_slave = %lx\n",
+		"[POWER ON]set MD boot slave done: ret=%lu, boot_status_0=%lu, boot_status_1=%lu, boot_slave = %lu\n",
 		res.a0, res.a1, res.a2, res.a3);
 
 	return 0;

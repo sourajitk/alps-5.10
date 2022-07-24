@@ -48,7 +48,6 @@ struct mml_drm_ctx {
 	struct kthread_worker kt_done;
 	struct task_struct *kt_done_task;
 	struct sync_timeline *timeline;
-	u32 panel_pixel;
 	bool kt_priority;
 	bool disp_dual;
 	bool disp_vdo;
@@ -87,16 +86,14 @@ enum mml_mode mml_drm_query_cap(struct mml_drm_ctx *ctx,
 	}
 
 	/* for alpha rotate */
-	if (MML_FMT_IS_ARGB(info->src.format) &&
-		MML_FMT_IS_ARGB(info->dest[0].data.format)) {
+	if (info->alpha &&
+	    MML_FMT_IS_ARGB(info->src.format) &&
+	    MML_FMT_IS_ARGB(info->dest[0].data.format)) {
 		const struct mml_frame_dest *dest = &info->dest[0];
 		u32 srccw = dest->crop.r.width;
 		u32 srcch = dest->crop.r.height;
 		u32 destw = dest->data.width;
 		u32 desth = dest->data.height;
-
-		if (dest->rotate == MML_ROT_90 || dest->rotate == MML_ROT_270)
-			swap(destw, desth);
 
 		if (srcw < 9) {
 			mml_err("exceed HW limitation src width %u < 9", srcw);
@@ -359,7 +356,7 @@ static void frame_config_destroy_work(struct work_struct *work)
 static void frame_config_queue_destroy(struct kref *kref)
 {
 	struct mml_frame_config *cfg = container_of(kref, struct mml_frame_config, ref);
-	struct mml_drm_ctx *ctx = cfg->ctx;
+	struct mml_drm_ctx *ctx = (struct mml_drm_ctx *)cfg->ctx;
 
 	queue_work(ctx->wq_destroy, &cfg->work_destroy);
 }
@@ -387,23 +384,6 @@ static struct mml_frame_config *frame_config_create(
 	kref_init(&cfg->ref);
 
 	return cfg;
-}
-
-static u32 frame_calc_layer_hrt(struct mml_drm_ctx *ctx, struct mml_frame_info *info,
-	u32 layer_w, u32 layer_h)
-{
-	/* MML HRT bandwidth calculate by
-	 *	width * height * Bpp * fps * v-blanking
-	 *
-	 * And for resize case total source pixel must read during layer
-	 * region (which is compose width and height). So ratio should be:
-	 *	panel * src / layer
-	 *
-	 * This API returns bandwidth in KBps
-	 */
-	return ctx->panel_pixel / layer_w * info->src.width / layer_h * info->src.height *
-		MML_FMT_BITS_PER_PIXEL(info->src.format) / 8 * 122 / 100 *
-		MML_HRT_FPS / 1000;
 }
 
 static void frame_buf_to_task_buf(struct mml_file_buf *fbuf,
@@ -466,7 +446,7 @@ static void task_move_to_running(struct mml_task *task)
 static void task_move_to_idle(struct mml_task *task)
 {
 	struct mml_frame_config *cfg = task->config;
-	struct mml_drm_ctx *ctx = task->ctx;
+	struct mml_drm_ctx *ctx = (struct mml_drm_ctx *)task->ctx;
 
 	/* Must lock ctx->config_mutex before call */
 	if (task->state == MML_TASK_INITIAL ||
@@ -512,7 +492,7 @@ static void task_move_to_destroy(struct kref *kref)
 
 static void task_submit_done(struct mml_task *task)
 {
-	struct mml_drm_ctx *ctx = task->ctx;
+	struct mml_drm_ctx *ctx = (struct mml_drm_ctx *)task->ctx;
 
 	mml_msg("[drm]%s task %p state %u", __func__, task, task->state);
 
@@ -582,7 +562,7 @@ static void task_frame_done(struct mml_task *task)
 {
 	struct mml_frame_config *cfg = task->config;
 	struct mml_frame_config *tmp;
-	struct mml_drm_ctx *ctx = task->ctx;
+	struct mml_drm_ctx *ctx = (struct mml_drm_ctx *)task->ctx;
 	struct mml_dev *mml = cfg->mml;
 
 	mml_trace_ex_begin("%s", __func__);
@@ -716,13 +696,6 @@ s32 mml_drm_submit(struct mml_drm_ctx *ctx, struct mml_submit *submit,
 		}
 	}
 
-	/* always fixup format/modifier for afbc case
-	 * the format in info should change to fourcc format in future design
-	 * and store mml format in another structure
-	 */
-	submit->info.src.format = format_drm_to_mml(
-		submit->info.src.format, submit->info.src.modifier);
-
 	/* always fixup plane offset */
 	if (likely(submit->info.mode != MML_MODE_SRAM_READ)) {
 		frame_calc_plane_offset(&submit->info.src, &submit->buffer.src);
@@ -730,6 +703,13 @@ s32 mml_drm_submit(struct mml_drm_ctx *ctx, struct mml_submit *submit,
 			frame_calc_plane_offset(&submit->info.dest[i].data,
 				&submit->buffer.dest[i]);
 	}
+
+	/* always fixup format/modifier for afbc case
+	 * the format in info should change to fourcc format in future design
+	 * and store mml format in another structure
+	 */
+	submit->info.src.format = format_drm_to_mml(
+		submit->info.src.format, submit->info.src.modifier);
 
 	if (MML_FMT_YUV_COMPRESS(submit->info.src.format)) {
 		submit->info.src.y_stride =
@@ -800,16 +780,6 @@ s32 mml_drm_submit(struct mml_drm_ctx *ctx, struct mml_submit *submit,
 			goto err_unlock_exit;
 		}
 		task->config = cfg;
-		if (submit->info.mode == MML_MODE_RACING) {
-			cfg->layer_w = submit->layer_width;
-			if (unlikely(!cfg->layer_w))
-				cfg->layer_w = submit->info.dest[0].compose.width;
-			cfg->layer_h = submit->layer_height;
-			if (unlikely(!cfg->layer_h))
-				cfg->layer_h = submit->info.dest[0].compose.height;
-			cfg->disp_hrt = frame_calc_layer_hrt(ctx, &submit->info,
-				cfg->layer_w, cfg->layer_h);
-		}
 	}
 
 	/* maintain racing ref count for easy query mode */
@@ -946,10 +916,10 @@ EXPORT_SYMBOL_GPL(mml_drm_dump);
 static s32 dup_task(struct mml_task *task, u32 pipe)
 {
 	struct mml_frame_config *cfg = task->config;
-	struct mml_drm_ctx *ctx = task->ctx;
+	struct mml_drm_ctx *ctx = (struct mml_drm_ctx *)task->ctx;
 	struct mml_task *src;
 
-	if (unlikely(task->pkts[pipe])) {
+	if (task->pkts[pipe]) {
 		mml_err("[drm]%s task %p pipe %hhu already has pkt before dup",
 			__func__, task, pipe);
 		return -EINVAL;
@@ -1021,7 +991,7 @@ dup_command:
 
 static void task_queue(struct mml_task *task, u32 pipe)
 {
-	struct mml_drm_ctx *ctx = task->ctx;
+	struct mml_drm_ctx *ctx = (struct mml_drm_ctx *)task->ctx;
 
 	queue_work(ctx->wq_config[pipe], &task->work_config[pipe]);
 }
@@ -1085,7 +1055,6 @@ static struct mml_drm_ctx *drm_ctx_create(struct mml_dev *mml,
 	ctx->disp_dual = disp->dual;
 	ctx->disp_vdo = disp->vdo_mode;
 	ctx->submit_cb = disp->submit_cb;
-	ctx->panel_pixel = MML_DEFAULT_PANEL_PX;
 	ctx->wq_config[0] = alloc_ordered_workqueue("mml_work0", WORK_CPU_UNBOUND | WQ_HIGHPRI, 0);
 	ctx->wq_config[1] = alloc_ordered_workqueue("mml_work1", WORK_CPU_UNBOUND | WQ_HIGHPRI, 0);
 
@@ -1176,21 +1145,6 @@ void mml_drm_put_context(struct mml_drm_ctx *ctx)
 }
 EXPORT_SYMBOL_GPL(mml_drm_put_context);
 
-void mml_drm_set_panel_pixel(struct mml_drm_ctx *ctx, u32 pixel)
-{
-	struct mml_frame_config *cfg;
-
-	ctx->panel_pixel = pixel;
-	mutex_lock(&ctx->config_mutex);
-	list_for_each_entry(cfg, &ctx->configs, entry) {
-		/* calculate hrt base on new pixel count */
-		cfg->disp_hrt = frame_calc_layer_hrt(ctx, &cfg->info,
-			cfg->layer_w, cfg->layer_h);
-	}
-	mutex_unlock(&ctx->config_mutex);
-}
-EXPORT_SYMBOL_GPL(mml_drm_set_panel_pixel);
-
 s32 mml_drm_racing_config_sync(struct mml_drm_ctx *ctx, struct cmdq_pkt *pkt)
 {
 	struct cmdq_operand lhs, rhs;
@@ -1248,12 +1202,7 @@ void mml_drm_split_info(struct mml_submit *submit, struct mml_submit *submit_pq)
 {
 	struct mml_frame_info *info = &submit->info;
 	struct mml_frame_info *info_pq = &submit_pq->info;
-	struct mml_frame_dest *dest = &info->dest[0];
 	u32 i;
-
-	/* display layer pixel */
-	submit->layer_width = dest->compose.width;
-	submit->layer_height = dest->compose.height;
 
 	submit_pq->info = submit->info;
 	submit_pq->buffer = submit->buffer;
@@ -1263,56 +1212,40 @@ void mml_drm_split_info(struct mml_submit *submit, struct mml_submit *submit_pq)
 		if (submit_pq->pq_param[i] && submit->pq_param[i])
 			*submit_pq->pq_param[i] = *submit->pq_param[i];
 
-	if (dest->rotate == MML_ROT_0 ||
-	    dest->rotate == MML_ROT_180) {
-		dest->compose.left = 0;
-		dest->compose.top = 0;
-		dest->compose.width = dest->crop.r.width;
-		dest->compose.height = dest->crop.r.height;
-
-		if (MML_FMT_H_SUBSAMPLE(dest->data.format))
-			dest->crop.r.width = (dest->crop.r.width + 1) & ~1;
-		if (MML_FMT_V_SUBSAMPLE(dest->data.format))
-			dest->crop.r.height = (dest->crop.r.height + 1) & ~1;
-
-		dest->data.width = dest->crop.r.width;
-		dest->data.height = dest->crop.r.height;
+	if (info->dest[0].rotate == MML_ROT_0 ||
+	    info->dest[0].rotate == MML_ROT_180) {
+		info->dest[0].compose.left = 0;
+		info->dest[0].compose.top = 0;
+		info->dest[0].compose.width = info->dest[0].crop.r.width;
+		info->dest[0].compose.height = info->dest[0].crop.r.height;
 	} else {
-		dest->compose.left = 0;
-		dest->compose.top = 0;
-		dest->compose.width = dest->crop.r.height;
-		dest->compose.height = dest->crop.r.width;
-
-		if (MML_FMT_H_SUBSAMPLE(dest->data.format)) {
-			dest->crop.r.width = (dest->crop.r.width + 1) & ~1;
-			dest->crop.r.height = (dest->crop.r.height + 1) & ~1;
-		} else if (MML_FMT_V_SUBSAMPLE(dest->data.format)) {
-			dest->crop.r.width = (dest->crop.r.width + 1) & ~1;
-		}
-
-		dest->data.width = dest->crop.r.height;
-		dest->data.height = dest->crop.r.width;
+		info->dest[0].compose.left = 0;
+		info->dest[0].compose.top = 0;
+		info->dest[0].compose.width = info->dest[0].crop.r.height;
+		info->dest[0].compose.height = info->dest[0].crop.r.width;
 	}
 
-	dest->data.y_stride = mml_color_get_min_y_stride(
-		dest->data.format, dest->data.width);
-	dest->data.uv_stride = mml_color_get_min_uv_stride(
-		dest->data.format, dest->data.width);
-	memset(&dest->pq_config, 0, sizeof(dest->pq_config));
+	info->dest[0].data.width = info->dest[0].compose.width;
+	info->dest[0].data.height = info->dest[0].compose.height;
+	info->dest[0].data.y_stride = mml_color_get_min_y_stride(
+		info->dest[0].data.format, info->dest[0].compose.width);
+	info->dest[0].data.uv_stride = mml_color_get_min_uv_stride(
+		info->dest[0].data.format, info->dest[0].compose.width);
+	memset(&info->dest[0].pq_config, 0, sizeof(info->dest[0].pq_config));
 
-	info_pq->src = dest->data;
+	info_pq->src = info->dest[0].data;
 	info_pq->dest[0].crop.r.left = 0;
 	info_pq->dest[0].crop.r.top = 0;
-	info_pq->dest[0].crop.r.width = dest->compose.width;
-	info_pq->dest[0].crop.r.height = dest->compose.height;
+	info_pq->dest[0].crop.r.width = info_pq->src.width;
+	info_pq->dest[0].crop.r.height = info_pq->src.height;
 	info_pq->dest[0].rotate = 0;
 	info_pq->dest[0].flip = 0;
 	info_pq->mode = MML_MODE_DDP_ADDON;
 	submit_pq->buffer.src = submit->buffer.dest[0];
 
-	if (MML_FMT_PLANE(dest->data.format) > 1)
+	if (MML_FMT_PLANE(info->dest[0].data.format) > 1)
 		mml_err("%s dest plane should be 1 but format %#010x",
-			__func__, dest->data.format);
+			__func__, info->dest[0].data.format);
 }
 EXPORT_SYMBOL_GPL(mml_drm_split_info);
 

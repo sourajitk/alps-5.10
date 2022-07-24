@@ -943,7 +943,7 @@ static int config_hw(struct seninf_ctx *ctx)
 			g_seninf_ops->_set_cammux_vc(ctx, vc->cam,
 						     vc_sel, dt_sel, dt_en, dt_en);
 			g_seninf_ops->_set_cammux_src(ctx, vc->mux, vc->cam,
-						      vc->exp_hsize, vc->exp_vsize, vc->dt);
+						      vc->exp_hsize, vc->exp_vsize);
 			g_seninf_ops->_set_cammux_chk_pixel_mode(ctx,
 								 vc->cam,
 								 vc->pixel_mode);
@@ -1127,14 +1127,8 @@ int update_isp_clk(struct seninf_ctx *ctx)
 
 	vc = mtk_cam_seninf_get_vc_by_pad(ctx, PAD_SRC_RAW0);
 	if (!vc) {
-		dev_info(ctx->dev, "failed to get vc SRC_RAW0, try EXT0\n");
-
-		vc = mtk_cam_seninf_get_vc_by_pad(ctx, PAD_SRC_RAW_EXT0);
-		if (!vc) {
-			dev_info(ctx->dev, "failed to get vc SRC_RAW_EXT0\n");
-
-			return -1;
-		}
+		dev_info(ctx->dev, "failed to get vc\n");
+		return -1;
 	}
 	dev_info(ctx->dev,
 		"%s dfs->cnt %d pixel mode %d customized_pixel_rate %lld, buffered_pixel_rate %lld mipi_pixel_rate %lld\n",
@@ -1209,6 +1203,62 @@ static int debug_err_detect_initialize(struct seninf_ctx *ctx)
 	return 0;
 }
 
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+static int mtk_senif_get_ccu_phandle(struct seninf_core *core)
+{
+	struct device *dev = core->dev;
+	struct device_node *node;
+	int ret = 0;
+
+	node = of_find_compatible_node(NULL, NULL, "mediatek,camera_fsync_ccu");
+	if (node == NULL) {
+		dev_info(dev, "of_find mediatek,camera_fsync_ccu fail\n");
+		ret = PTR_ERR(node);
+		goto out;
+	}
+
+	ret = of_property_read_u32(node, "mediatek,ccu_rproc",
+				   &core->rproc_ccu_phandle);
+	if (ret) {
+		dev_info(dev, "fail to get rproc_ccu_phandle:%d\n", ret);
+		ret = -EINVAL;
+		goto out;
+	}
+
+out:
+	return ret;
+}
+
+static int mtk_senif_power_ctrl_ccu(struct seninf_core *core, int on_off)
+{
+	int ret;
+
+	if (on_off) {
+		ret = mtk_senif_get_ccu_phandle(core);
+		if (ret)
+			goto out;
+		core->rproc_ccu_handle = rproc_get_by_phandle(core->rproc_ccu_phandle);
+		if (core->rproc_ccu_handle == NULL) {
+			dev_info(core->dev, "Get ccu handle fail\n");
+			ret = PTR_ERR(core->rproc_ccu_handle);
+			goto out;
+		}
+
+		ret = rproc_boot(core->rproc_ccu_handle);
+		if (ret)
+			dev_info(core->dev, "boot ccu rproc fail\n");
+	} else {
+		if (core->rproc_ccu_handle) {
+			rproc_shutdown(core->rproc_ccu_handle);
+			ret = 0;
+		} else
+			ret = -EINVAL;
+	}
+out:
+	return ret;
+}
+#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
+
 static int seninf_s_stream(struct v4l2_subdev *sd, int enable)
 {
 #ifdef SENSOR_SECURE_MTEE_SUPPORT
@@ -1216,6 +1266,9 @@ static int seninf_s_stream(struct v4l2_subdev *sd, int enable)
 #endif
 	int ret;
 	struct seninf_ctx *ctx = sd_to_ctx(sd);
+	#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	struct seninf_core *core = ctx->core;
+	#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 
 	if (ctx->streaming == enable)
 		return 0;
@@ -1239,10 +1292,16 @@ static int seninf_s_stream(struct v4l2_subdev *sd, int enable)
 					ctx->sensor_pad_idx, &ctx->buffered_pixel_rate);
 
 		get_customized_pixel_rate(ctx, ctx->sensor_sd, &ctx->customized_pixel_rate);
+		#ifdef OPLUS_FEATURE_CAMERA_COMMON
+		mtk_senif_power_ctrl_ccu(core, 1);
+		#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 		ret = pm_runtime_get_sync(ctx->dev);
 		if (ret < 0) {
 			dev_info(ctx->dev, "%s pm_runtime_get_sync ret %d\n", __func__, ret);
 			pm_runtime_put_noidle(ctx->dev);
+			#ifdef OPLUS_FEATURE_CAMERA_COMMON
+			mtk_senif_power_ctrl_ccu(core, 0);
+			#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 			return ret;
 		}
 
@@ -1290,6 +1349,9 @@ static int seninf_s_stream(struct v4l2_subdev *sd, int enable)
 		g_seninf_ops->_poweroff(ctx);
 		ctx->dbg_last_dump_req = 0;
 		pm_runtime_put_sync(ctx->dev);
+		#ifdef OPLUS_FEATURE_CAMERA_COMMON
+		mtk_senif_power_ctrl_ccu(core, 0);
+		#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 	}
 
 	ctx->streaming = enable;
@@ -1363,8 +1425,7 @@ static int seninf_notifier_bound(struct v4l2_async_notifier *notifier,
 	dev_info(ctx->dev, "%s bounded\n", sd->entity.name);
 
 	ret = media_create_pad_link(&sd->entity, 0,
-				    &ctx->subdev.entity, 0,
-				    MEDIA_LNK_FL_DYNAMIC);
+				    &ctx->subdev.entity, 0, 0);
 	if (ret) {
 		dev_info(ctx->dev,
 			"failed to create link for %s\n",
@@ -1816,7 +1877,6 @@ static int runtime_suspend(struct device *dev)
 		seninf_core_pm_runtime_put(core);
 		if (ctx->core->dfs.reg && regulator_is_enabled(ctx->core->dfs.reg))
 			regulator_disable(ctx->core->dfs.reg);
-
 	}
 
 	mutex_unlock(&core->mutex);

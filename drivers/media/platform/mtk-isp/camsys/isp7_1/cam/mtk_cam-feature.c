@@ -10,23 +10,6 @@
  * which is using the raw_feature which is not changed
  * during streaming.
  */
-
-bool mtk_cam_is_ext_isp(struct mtk_cam_ctx *ctx)
-{
-	if (!ctx->used_raw_num)
-		return false;
-
-	return mtk_cam_feature_is_ext_isp(ctx->pipe->feature_active);
-}
-
-bool mtk_cam_is_ext_isp_yuv(struct mtk_cam_ctx *ctx)
-{
-	if (!ctx->used_raw_num)
-		return false;
-
-	return mtk_cam_feature_is_ext_isp_yuv(ctx->pipe->feature_active);
-}
-
 bool mtk_cam_is_time_shared(struct mtk_cam_ctx *ctx)
 {
 	if (!ctx->used_raw_num)
@@ -202,41 +185,3 @@ int mtk_cam_get_feature_switch(struct mtk_raw_pipeline *raw_pipe,
 
 	return res;
 }
-
-bool mtk_cam_hw_is_otf(struct mtk_cam_ctx *ctx)
-{
-	if (!ctx->used_raw_num)
-		return false;
-
-	return mtk_cam_hw_mode_is_otf(ctx->pipe->hw_mode_pending);
-}
-
-bool mtk_cam_hw_is_dc(struct mtk_cam_ctx *ctx)
-{
-	if (!ctx->used_raw_num)
-		return false;
-
-	return mtk_cam_hw_mode_is_dc(ctx->pipe->hw_mode_pending);
-}
-
-bool mtk_cam_hw_is_offline(struct mtk_cam_ctx *ctx)
-{
-	if (!ctx->used_raw_num)
-		return false;
-
-	return mtk_cam_hw_mode_is_offline(ctx->pipe->hw_mode_pending);
-}
-
-bool mtk_cam_hw_is_m2m(struct mtk_cam_ctx *ctx)
-{
-	if (!ctx->used_raw_num)
-		return false;
-
-	return mtk_cam_hw_mode_is_m2m(ctx->pipe->hw_mode_pending);
-}
-
-bool mtk_cam_is_srt(int hw_mode)
-{
-	return hw_mode == HW_MODE_DIRECT_COUPLED;
-}
-

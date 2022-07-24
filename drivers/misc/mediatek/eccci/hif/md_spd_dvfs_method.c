@@ -82,13 +82,16 @@ static const struct dvfs_ref s_dl_dvfs_tbl_v4[] = { /* 4:3:1 */
 	{0LL,          {-1, -1, -1, -1}, -1, 0x02, 0xFF, 0x7F, 0xFF, {-1, -1, -1, -1}},
 };
 
-static const struct dvfs_ref s_dl_dvfs_tbl_v5[] = { /* 4:3:1 */
-	/*speed, cluster0, cluster1, cluster2, cluster3, dram, isr, push, rps, bat, tx_done*/
-	{2000000000LL, {-1, -1, -1, -1}, -1, 0x02, 0x10, 0x20, 0x40, {0x0D, 0x0D, 0x0D, 0x0D}},
-	{1000000000LL, {-1, -1, -1, -1}, -1, 0x40, 0x10, 0x20, 0x70, {0x70, 0x70, 0x70, 0x70}},
-	/* normal */
-	{0LL,          {-1, -1, -1, -1}, -1, 0x02, 0xFF, 0x7F, 0xFF, {-1, -1, -1, -1}},
+// #ifdef OPLUS_BUG_STABILITY
+static const struct dvfs_ref s_dl_dvfs_tbl_v5[] = { /* 4:3:1 for mt6895 */
+    /*speed, cluster0, cluster1, cluster2, cluster3, dram, isr, push, rps, bat*/
+    {1000000000LL, {1300000, 1400000, -1, -1}, -1, 0x02, 0x10, 0x20, 0x40},
+    {450000000LL, {1200000, 1400000, -1, -1}, -1, 0x02, 0x10, 0x20, 0x40},
+    {230000000LL, {1100000, -1, -1, -1}, -1, 0x02, 0x10, 0x20, 0x40},
+    /* normal */
+    {0LL,          {-1, -1, -1, -1}, -1, 0xFF, 0xFF, 0x0F, 0xFF},
 };
+// #endif OPLUS_BUG_STABILITY
 
 /* uplink */
 static const struct dvfs_ref s_ul_dvfs_tbl_v0[] = { /* default */
@@ -126,12 +129,14 @@ static const struct dvfs_ref s_ul_dvfs_tbl_v4[] = { /* 4:3:1 */
 	{0LL,          {-1, -1, -1, -1}, -1, 0xFF, 0xFF, 0x0F, 0xFF, {-1, -1, -1, -1}},
 };
 
+// #ifdef OPLUS_BUG_STABILITY
 static const struct dvfs_ref s_ul_dvfs_tbl_v5[] = { /* 4:3:1 */
-	/*speed, cluster0, cluster1, cluster2, cluster3, dram, isr, push, rps, bat, tx_done*/
-	{450000000LL, {900000, 900000, 900000, -1}, 1, 0x02, 0x10, 0x20, 0xFF, {-1, -1, -1, -1}},
-	/* normal */
-	{0LL,          {-1, -1, -1, -1}, -1, 0xFF, 0xFF, 0x0F, 0xFF, {-1, -1, -1, -1}},
+    /*speed, cluster0, cluster1, cluster2, cluster3, dram, isr, push, rps, bat*/
+    {450000000LL, {2000000, 2000000, -1, -1}, 1, 0x02, 0x10, 0x20, 0xFF},
+    /* normal */
+    {0LL,          {-1, -1, -1, -1}, -1, 0xFF, 0xFF, 0x0F, 0xFF},
 };
+// #endif OPLUS_BUG_STABILITY
 
 #define QOS_PREFER_CPU_BITMAP_V0_2_6	(0xC0)
 #define QOS_PREFER_CPU_BITMAP_V1_4_4	(0xF0)
@@ -161,8 +166,10 @@ static const struct dvfs_ref_tbl table_entry[] = {
 	{s_dl_dvfs_tbl_v4, s_ul_dvfs_tbl_v4, (unsigned int)ARRAY_SIZE(s_dl_dvfs_tbl_v4),
 		(unsigned int)ARRAY_SIZE(s_ul_dvfs_tbl_v4), QOS_PREFER_CPU_BITMAP_V2_1_3_4},
 
+	// #ifdef OPLUS_BUG_STABILITY
 	{s_dl_dvfs_tbl_v5, s_ul_dvfs_tbl_v5, (unsigned int)ARRAY_SIZE(s_dl_dvfs_tbl_v5),
-		(unsigned int)ARRAY_SIZE(s_ul_dvfs_tbl_v5), QOS_PREFER_CPU_BITMAP_V2_1_3_4},
+        (unsigned int)ARRAY_SIZE(s_ul_dvfs_tbl_v5), QOS_PREFER_CPU_BITMAP_V2_1_3_4},
+	// #endif OPLUS_BUG_STABILITY
 };
 
 static const struct dvfs_ref *s_dl_dvfs_tbl;
@@ -461,7 +468,7 @@ int mtk_ccci_get_tx_done_aff(int txq)
 void mtk_ccci_spd_qos_set_task(
 	struct task_struct *rx_push_task,
 	struct task_struct *alloc_bat_task,
-	unsigned int irq_id)
+    unsigned int irq_id)
 {
 	s_rx_push_task = rx_push_task;
 	s_alloc_bat_task = alloc_bat_task;

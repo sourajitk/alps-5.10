@@ -387,10 +387,8 @@ free_map:
 	m->map = NULL;
 	kfree(map);
 out:
-	if (ret) {
-		mdw_exception("map device va fail, size(%u) align(%u)\n", m->size, m->align);
+	if (ret)
 		dma_buf_put(m->dbuf);
-	}
 	mutex_unlock(&m->mtx);
 
 	return ret;
@@ -677,7 +675,6 @@ static int mdw_mem_ioctl_map(struct mdw_fpriv *mpriv,
 			m->size = size;
 			m->dbuf = dbuf;
 			m->type = MDW_MEM_TYPE_MAIN;
-			m->handle = handle;
 		}
 	} else {
 		mdw_mem_put(mpriv, m);

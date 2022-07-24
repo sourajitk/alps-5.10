@@ -1164,6 +1164,8 @@ static void mtk_hp_enable(struct mt6368_priv *priv)
 	regmap_write(priv->regmap, MT6368_AUDDEC_ANA_CON2, 0x03);
 	usleep_range(100, 120);
 
+	/* Enable AUD_CLK */
+	mt6368_set_decoder_clk(priv, true);
 
 	/* Enable Audio DAC  */
 	regmap_write(priv->regmap, MT6368_AUDDEC_ANA_CON1, 0x30);
@@ -1240,6 +1242,8 @@ static void mtk_hp_disable(struct mt6368_priv *priv)
 	regmap_update_bits(priv->regmap, MT6368_AUDDEC_ANA_CON0,
 			   0xf, 0x0);
 
+	/* Disable AUD_CLK */
+	mt6368_set_decoder_clk(priv, false);
 
 	/* Short HP main output to HP aux output stage */
 	regmap_write(priv->regmap, MT6368_AUDDEC_ANA_CON3, 0x77);
@@ -1317,6 +1321,8 @@ static int mtk_hp_impedance_enable(struct mt6368_priv *priv)
 	regmap_write(priv->regmap, MT6368_AUDDEC_ANA_CON20, 0x0);
 	regmap_write(priv->regmap, MT6368_AUDDEC_ANA_CON21, 0x0);
 
+	/* Enable AUD_CLK */
+	mt6368_set_decoder_clk(priv, true);
 
 	/* Enable Audio L channel DAC */
 	regmap_write(priv->regmap, MT6368_AUDDEC_ANA_CON1, 0x30);
@@ -1347,6 +1353,8 @@ static int mtk_hp_impedance_disable(struct mt6368_priv *priv)
 	regmap_update_bits(priv->regmap, MT6368_AUDDEC_ANA_CON0,
 			   0xf, 0x0);
 
+	/* Disable AUD_CLK */
+	mt6368_set_decoder_clk(priv, false);
 
 	/* Enable HPR/L STB enhance circuits for off state */
 	regmap_update_bits(priv->regmap, MT6368_AUDDEC_ANA_CON4,
@@ -1464,6 +1472,8 @@ static int mt_rcv_event(struct snd_soc_dapm_widget *w,
 		regmap_write(priv->regmap, MT6368_ZCD_CON5,
 			     priv->ana_gain[AUDIO_ANALOG_VOLUME_HSOUTL]);
 
+		/* Enable AUD_CLK */
+		mt6368_set_decoder_clk(priv, true);
 
 		/* Enable Audio DAC  */
 		regmap_write(priv->regmap, MT6368_AUDDEC_ANA_CON1, 0x0);
@@ -1484,6 +1494,8 @@ static int mt_rcv_event(struct snd_soc_dapm_widget *w,
 		regmap_update_bits(priv->regmap, MT6368_AUDDEC_ANA_CON0,
 				   0xf, 0x0);
 
+		/* Disable AUD_CLK */
+		mt6368_set_decoder_clk(priv, false);
 
 		/* decrease HS gain to minimum gain step by step */
 		regmap_write(priv->regmap, MT6368_ZCD_CON5, DL_GAIN_N_40DB);
@@ -1551,6 +1563,8 @@ static int mt_lo_event(struct snd_soc_dapm_widget *w,
 		regmap_write(priv->regmap, MT6368_ZCD_CON2,
 			     priv->ana_gain[AUDIO_ANALOG_VOLUME_LINEOUTR]);
 
+		/* Enable AUD_CLK */
+		mt6368_set_decoder_clk(priv, true);
 
 		/* Switch LOL MUX to audio DAC */
 		if (mux == LO_MUX_L_DAC) {
@@ -1598,6 +1612,8 @@ static int mt_lo_event(struct snd_soc_dapm_widget *w,
 		regmap_update_bits(priv->regmap, MT6368_AUDDEC_ANA_CON0,
 				   0x000f, 0x0000);
 
+		/* Disable AUD_CLK */
+		mt6368_set_decoder_clk(priv, false);
 
 		/* decrease LO gain to minimum gain step by step */
 		regmap_write(priv->regmap, MT6368_ZCD_CON1, DL_GAIN_N_40DB);
@@ -1747,10 +1763,17 @@ static int mt_mic_bias_0_event(struct snd_soc_dapm_widget *w,
 			break;
 		}
 
-		/* MISBIAS0 = 1P9V */
+//#ifdef OPLUS_ARCH_EXTENDS
+/*change micbias0 to 2P6V */
 		regmap_update_bits(priv->regmap, MT6368_AUDENC_ANA_CON31,
 				   RG_AUDMICBIAS0VREF_MASK_SFT,
-				   MIC_BIAS_1P9 << RG_AUDMICBIAS0VREF_SFT);
+				    MIC_BIAS_2P6 << RG_AUDMICBIAS0VREF_SFT);
+//#else
+		/* MISBIAS0 = 1P9V */
+//		regmap_update_bits(priv->regmap, MT6368_AUDENC_ANA_CON31,
+//				   RG_AUDMICBIAS0VREF_MASK_SFT,
+//				   MIC_BIAS_1P9 << RG_AUDMICBIAS0VREF_SFT);
+//#endif
 		/* vow low power select */
 		regmap_update_bits(priv->regmap, MT6368_AUDENC_ANA_CON31,
 				   RG_AUDMICBIAS0LOWPEN_MASK_SFT,
@@ -1789,8 +1812,14 @@ static int mt_mic_bias_1_event(struct snd_soc_dapm_widget *w,
 			regmap_write(priv->regmap,
 				     MT6368_AUDENC_ANA_CON34, 0x1);
 		} else {
+//#ifdef OPLUS_BUG_COMPATIBILITY
+			/*add for setting micbias 2.7V after recording */
 			regmap_write(priv->regmap,
-				     MT6368_AUDENC_ANA_CON33, 0x60);
+				     MT6368_AUDENC_ANA_CON33, 0x70);
+//#else /* CONFIG_SND_SOC_CODEC_MICBIAS_2P7V */
+//			regmap_write(priv->regmap,
+//				     MT6368_AUDENC_ANA_CON33, 0x60);
+//#endif
 			regmap_write(priv->regmap,
 				     MT6368_AUDENC_ANA_CON34, 0x0);
 		}
@@ -1838,10 +1867,18 @@ static int mt_mic_bias_2_event(struct snd_soc_dapm_widget *w,
 			break;
 		}
 
-		/* MISBIAS2 = 1P9V */
+//#ifdef OPLUS_ARCH_EXTENDS
+/*change micbias0 to 2P6V */
 		regmap_update_bits(priv->regmap, MT6368_AUDENC_ANA_CON35,
 				   RG_AUDMICBIAS2VREF_MASK_SFT,
-				   MIC_BIAS_1P9 << RG_AUDMICBIAS2VREF_SFT);
+				   MIC_BIAS_2P6 << RG_AUDMICBIAS2VREF_SFT);
+
+//#else
+		/* MISBIAS2 = 1P9V */
+//		regmap_update_bits(priv->regmap, MT6368_AUDENC_ANA_CON35,
+//				   RG_AUDMICBIAS2VREF_MASK_SFT,
+//				   MIC_BIAS_1P9 << RG_AUDMICBIAS2VREF_SFT);
+//#endif
 		/* vow low power select */
 		regmap_update_bits(priv->regmap, MT6368_AUDENC_ANA_CON35,
 				   RG_AUDMICBIAS2LOWPEN_MASK_SFT,
@@ -2587,13 +2624,13 @@ static int mt_adc_3_event(struct snd_soc_dapm_widget *w,
 	struct snd_soc_component *cmpnt = snd_soc_dapm_to_component(w->dapm);
 	struct mt6368_priv *priv = snd_soc_component_get_drvdata(cmpnt);
 
-	dev_info(priv->dev, "%s(), event = 0x%x\n", __func__, event);
+	dev_dbg(priv->dev, "%s(), event = 0x%x\n", __func__, event);
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
 		usleep_range(100, 120);
-		/* Audio the 3rd preamplifier DCC precharge off */
-		regmap_update_bits(priv->regmap, MT6368_AUDENC_ANA_CON4,
+		/* Audio R preamplifier DCC precharge off */
+		regmap_update_bits(priv->regmap, MT6368_AUDENC_ANA_CON2,
 				   RG_AUDPREAMP3DCPRECHARGE_MASK_SFT,
 				   0x0);
 		break;
@@ -3282,12 +3319,6 @@ static const struct snd_soc_dapm_widget mt6368_dapm_widgets[] = {
 	SND_SOC_DAPM_SUPPLY("DL Digital Clock CH_3", SND_SOC_NOPM,
 			    0, 0, NULL, 0),
 
-	/* AUDDEC */
-	SND_SOC_DAPM_SUPPLY_S("AUDDEC_CLK", SUPPLY_SEQ_DEC_CLK,
-				MT6368_AUDDEC_ANA_CON26,
-				RG_RSTB_DECODER_VA32_SFT, 0,
-				NULL, 0),
-
 	/* AFE ON */
 	SND_SOC_DAPM_SUPPLY_S("AFE_ON", SUPPLY_SEQ_AFE,
 			      MT6368_AFE_UL_DL_CON0, AFE_ON_SFT, 0,
@@ -3783,7 +3814,6 @@ static const struct snd_soc_dapm_route mt6368_dapm_routes[] = {
 	{"DL Power Supply", NULL, "mt6368_vaud18"},
 	{"DL Power Supply", NULL, "AUDGLB"},
 	{"DL Power Supply", NULL, "CLKSQ Audio"},
-	{"DL Power Supply", NULL, "AUDDEC_CLK"},
 	{"DL Power Supply", NULL, "AUDNCP_CK"},
 	{"DL Power Supply", NULL, "ZCD13M_CK"},
 	{"DL Power Supply", NULL, "AUD_CK"},
@@ -4078,38 +4108,25 @@ static void enable_trim_buf(struct mt6368_priv *priv, bool enable)
 #if !IS_ENABLED(CONFIG_FPGA_EARLY_PORTING)
 static void enable_trim_circuit(struct mt6368_priv *priv, bool enable)
 {
-	int status = 0;
-	unsigned int value = 0;
-
 	if (enable) {
-		if (!IS_ERR(priv->reg_vaud18)) {
-			status = regulator_enable(priv->reg_vaud18);
-			if (status)
-				dev_err(priv->dev, "%s() failed to enable vaud18(%d)\n",
-					__func__, status);
-		}
+		regmap_update_bits(priv->regmap, MT6368_LDO_VAUD18_CON0,
+				   RG_LDO_VAUD18_EN_MASK_SFT,
+				   1 << RG_LDO_VAUD18_EN_SFT);
+
 		regmap_update_bits(priv->regmap, MT6368_AUDDEC_ANA_CON5,
 				   RG_AUDHPTRIM_EN_VAUDP32_MASK_SFT,
 				   1 << RG_AUDHPTRIM_EN_VAUDP32_SFT);
 
 	} else {
+
 		regmap_update_bits(priv->regmap, MT6368_AUDDEC_ANA_CON5,
 				   RG_AUDHPTRIM_EN_VAUDP32_MASK_SFT,
 				   0 << RG_AUDHPTRIM_EN_VAUDP32_SFT);
 
-		if (!IS_ERR(priv->reg_vaud18)) {
-			status = regulator_disable(priv->reg_vaud18);
-			if (status)
-				dev_err(priv->dev, "%s() failed to disable vaud18(%d)\n",
-					__func__, status);
-		}
+		regmap_update_bits(priv->regmap, MT6368_LDO_VAUD18_CON0,
+				   RG_LDO_VAUD18_EN_MASK_SFT,
+				   0 << RG_LDO_VAUD18_EN_SFT);
 	}
-
-	regmap_read(priv->regmap, MT6368_LDO_VAUD18_CON0, &value);
-	dev_dbg(priv->dev, "%s(), enable(%d), 0x%x MT6368_LDO_VAUD18_CON0 = 0x%x\n",
-		__func__, enable, MT6368_LDO_VAUD18_CON0, value);
-
-
 }
 
 static void start_trim_hardware(struct mt6368_priv *priv)
@@ -4759,14 +4776,6 @@ static void calculate_lr_trim_code(struct mt6368_priv *priv)
 		goto EXIT;
 	}
 
-	/* prevent divid to 0 */
-	if ((trim_l[0] == trim_l[1]) ||
-		(trim_r[0] == trim_r[1])) {
-		hpl_trim_code = trim_l_code[1];
-		hpr_trim_code = trim_r_code[1];
-		goto EXIT;
-	}
-
 	/* start step2, calculate approximate solution*/
 	/* l-channel, find trim offset per trim code step */
 	trim_l_code[2] = (((abs(trim_l[0]) * 2) /
@@ -5365,7 +5374,6 @@ static int mt6368_rcv_dcc_set(struct snd_kcontrol *kcontrol,
 {
 	struct snd_soc_component *cmpnt = snd_soc_kcontrol_component(kcontrol);
 	struct mt6368_priv *priv = snd_soc_component_get_drvdata(cmpnt);
-	int status = 0;
 
 	/* receiver downlink */
 	mt6368_set_playback_gpio(priv);
@@ -5375,13 +5383,9 @@ static int mt6368_rcv_dcc_set(struct snd_kcontrol *kcontrol,
 #if IS_ENABLED(CONFIG_MT6685_AUDCLK)
 	mt6685_set_dcxo(true);
 #endif
-
-	if (!IS_ERR(priv->reg_vaud18)) {
-		status = regulator_enable(priv->reg_vaud18);
-		if (status)
-			dev_err(priv->dev, "%s() failed to enable vaud18(%d)\n",
-				__func__, status);
-	}
+	regmap_update_bits(priv->regmap, MT6368_LDO_VAUD18_CON0,
+			   RG_LDO_VAUD18_EN_MASK_SFT,
+			   1 << RG_LDO_VAUD18_EN_SFT);
 
 	/* audio clk source from internal dcxo */
 	regmap_update_bits(priv->regmap, MT6368_AUDENC_ANA_CON47,
@@ -7221,21 +7225,6 @@ static int mt6368_parse_dt(struct mt6368_priv *priv)
 				__func__, ret);
 		else
 			dev_err(dev, "%s() Get efuse failed (%d), will retry ...\n",
-				__func__, ret);
-
-		return ret;
-	}
-
-	/* get pmic regulator handler */
-	priv->reg_vaud18 = devm_regulator_get_optional(dev, "reg_vaud18");
-	ret = IS_ERR(priv->reg_vaud18);
-	if (ret) {
-		ret = PTR_ERR(priv->reg_vaud18);
-		if (ret != -EPROBE_DEFER)
-			dev_err(dev, "%s() Get regulator failed (%d)\n",
-				__func__, ret);
-		else
-			dev_err(dev, "%s() Get regulator failed (%d), will retry ...\n",
 				__func__, ret);
 
 		return ret;

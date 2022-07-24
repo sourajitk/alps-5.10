@@ -43,8 +43,7 @@ struct vsync_rec {
 };
 /******************************************************************************/
 #define MSG_TO_CCU_RESET_VSYNC_TIMESTAMP 0
-#define MSG_TO_CCU_CLEAR_VSYNC_TIMESTAMP 1
-#define MSG_TO_CCU_GET_VSYNC_TIMESTAMP 2
+#define MSG_TO_CCU_GET_VSYNC_TIMESTAMP 1
 /******************************************************************************/
 
 
@@ -57,7 +56,7 @@ struct vsync_rec {
 #ifdef USING_CCU
 void frm_power_on_ccu(unsigned int flag);
 
-void frm_reset_ccu_vsync_timestamp(unsigned int idx, unsigned int en);
+void frm_reset_ccu_vsync_timestamp(unsigned int idx);
 
 unsigned int frm_get_ccu_pwn_cnt(void);
 #endif

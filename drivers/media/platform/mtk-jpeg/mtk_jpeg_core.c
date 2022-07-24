@@ -1099,10 +1099,8 @@ static void mtk_jpeg_enc_device_run(void *priv)
 	 * registers are cleared. This is a hardware requirement.
 	 */
 	mtk_jpeg_enc_reset(jpeg->reg_base);
-	mtk_jpeg_set_enc_src(ctx, jpeg->reg_base,
-		 jpeg->variant->support_34bit, &src_buf->vb2_buf);
-	mtk_jpeg_set_enc_dst(ctx, jpeg->reg_base,
-		 jpeg->variant->support_34bit, &dst_buf->vb2_buf);
+	mtk_jpeg_set_enc_src(ctx, jpeg->reg_base, &src_buf->vb2_buf);
+	mtk_jpeg_set_enc_dst(ctx, jpeg->reg_base, &dst_buf->vb2_buf);
 	mtk_jpeg_set_enc_params(ctx, jpeg->reg_base);
 	mtk_jpeg_enc_start(jpeg->reg_base);
 	ctx->state = MTK_JPEG_RUNNING;
@@ -1256,8 +1254,7 @@ static irqreturn_t mtk_jpeg_enc_done(struct mtk_jpeg_dev *jpeg)
 	src_buf = v4l2_m2m_src_buf_remove(ctx->fh.m2m_ctx);
 	dst_buf = v4l2_m2m_dst_buf_remove(ctx->fh.m2m_ctx);
 
-	result_size = mtk_jpeg_enc_get_file_size(jpeg->reg_base,
-		 jpeg->variant->support_34bit);
+	result_size = mtk_jpeg_enc_get_file_size(jpeg->reg_base);
 	vb2_set_plane_payload(&dst_buf->vb2_buf, 0, result_size);
 
 	buf_state = VB2_BUF_STATE_DONE;
@@ -1680,29 +1677,7 @@ static __maybe_unused int mtk_jpeg_pm_resume(struct device *dev)
 	return 0;
 }
 
-static __maybe_unused int mtk_jpeg_suspend(struct device *dev)
-{
-	struct mtk_jpeg_dev *jpeg = dev_get_drvdata(dev);
-
-	v4l2_m2m_suspend(jpeg->m2m_dev);
-	return pm_runtime_force_suspend(dev);
-}
-
-static __maybe_unused int mtk_jpeg_resume(struct device *dev)
-{
-	struct mtk_jpeg_dev *jpeg = dev_get_drvdata(dev);
-	int ret;
-
-	ret = pm_runtime_force_resume(dev);
-	if (ret < 0)
-		return ret;
-
-	v4l2_m2m_resume(jpeg->m2m_dev);
-	return ret;
-}
-
 static const struct dev_pm_ops mtk_jpeg_pm_ops = {
-	SET_SYSTEM_SLEEP_PM_OPS(mtk_jpeg_suspend, mtk_jpeg_resume)
 	SET_RUNTIME_PM_OPS(mtk_jpeg_pm_suspend, mtk_jpeg_pm_resume, NULL)
 };
 
@@ -1719,7 +1694,6 @@ static const struct mtk_jpeg_variant mt8173_jpeg_drvdata = {
 	.ioctl_ops = &mtk_jpeg_dec_ioctl_ops,
 	.out_q_default_fourcc = V4L2_PIX_FMT_JPEG,
 	.cap_q_default_fourcc = V4L2_PIX_FMT_YUV420M,
-	.support_34bit = true,
 };
 
 static const struct mtk_jpeg_variant mtk_jpeg_drvdata = {
@@ -1735,7 +1709,6 @@ static const struct mtk_jpeg_variant mtk_jpeg_drvdata = {
 	.ioctl_ops = &mtk_jpeg_enc_ioctl_ops,
 	.out_q_default_fourcc = V4L2_PIX_FMT_YUYV,
 	.cap_q_default_fourcc = V4L2_PIX_FMT_JPEG,
-	.support_34bit = true,
 };
 
 static const struct mtk_jpeg_variant mtk_jpeg_drvdata_c1 = {
@@ -1751,23 +1724,6 @@ static const struct mtk_jpeg_variant mtk_jpeg_drvdata_c1 = {
 	.ioctl_ops = &mtk_jpeg_enc_ioctl_ops,
 	.out_q_default_fourcc = V4L2_PIX_FMT_YUYV,
 	.cap_q_default_fourcc = V4L2_PIX_FMT_JPEG,
-	.support_34bit = true,
-};
-
-static const struct mtk_jpeg_variant mtk_jpeg_drvdata_32bit = {
-	.clks = mtk_jpeg_clocks,
-	.num_clks = ARRAY_SIZE(mtk_jpeg_clocks),
-	.formats = mtk_jpeg_enc_formats,
-	.num_formats = MTK_JPEG_ENC_NUM_FORMATS,
-	.qops = &mtk_jpeg_enc_qops,
-	.irq_handler = mtk_jpeg_enc_irq,
-	.hw_reset = mtk_jpeg_enc_reset,
-	.m2m_ops = &mtk_jpeg_enc_m2m_ops,
-	.dev_name = "mtk-jpeg-enc",
-	.ioctl_ops = &mtk_jpeg_enc_ioctl_ops,
-	.out_q_default_fourcc = V4L2_PIX_FMT_YUYV,
-	.cap_q_default_fourcc = V4L2_PIX_FMT_JPEG,
-	.support_34bit = false,
 };
 
 
@@ -1787,10 +1743,6 @@ static const struct of_device_id mtk_jpeg_match[] = {
 	{
 		.compatible = "mediatek,mtk-jpgenc_c1",
 		.data = &mtk_jpeg_drvdata_c1,
-	},
-	{
-		.compatible = "mediatek,mtk-jpgenc-32bit",
-		.data = &mtk_jpeg_drvdata_32bit,
 	},
 	{},
 };

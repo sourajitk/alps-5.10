@@ -9,7 +9,7 @@
 
 &mmc1 {
 	host-index = <1>;
-	status = "okay";
+	status = "disabled";
 	pinctrl-names = "default", "state_uhs";
 	pinctrl-0 = <&mmc1_pins_default>;
 	pinctrl-1 = <&mmc1_pins_uhs>;
@@ -24,8 +24,8 @@
 	sd-uhs-ddr50;
 	cd-debounce-delay-ms = <0>;
 	cd-gpios = <&pio 11 GPIO_ACTIVE_LOW>;
-	vmmc-supply = <&mt6368_vmch_eint_high>;
-	vqmmc-supply = <&mt6368_vmc>;
+	//vmmc-supply = <&mt6368_vmch_eint_high>;
+	//vqmmc-supply = <&mt6368_vmc>;
 	no-mmc;
 	no-sdio;
 	mediatek,mmc-qos;
@@ -49,7 +49,7 @@
 	sd-uhs-sdr104;
 	sd-uhs-ddr50;
 	eint-gpios = <&pio 191 GPIO_ACTIVE_LOW>;
-	vmmc-supply = <&mt6368_vmch>;
+	//vmmc-supply = <&mt6368_vmch>;
 	vqmmc-supply = <&mt6363_vio18>;
 	no-mmc;
 	no-sd;
@@ -60,7 +60,7 @@
 &pio {
 	mmc1_pins_default: mmc1default {
 		pins_cmd_dat {
-			pinmux = <PINMUX_GPIO53__FUNC_MSDC1_DAT0>,
+			pinmux = 
 				<PINMUX_GPIO55__FUNC_MSDC1_DAT1>,
 				<PINMUX_GPIO54__FUNC_MSDC1_DAT2>,
 				<PINMUX_GPIO52__FUNC_MSDC1_DAT3>,
@@ -78,7 +78,7 @@
 
 	mmc1_pins_uhs: mmc1@0{
 		pins_cmd_dat {
-			pinmux = <PINMUX_GPIO53__FUNC_MSDC1_DAT0>,
+			pinmux = 
 				<PINMUX_GPIO55__FUNC_MSDC1_DAT1>,
 				<PINMUX_GPIO54__FUNC_MSDC1_DAT2>,
 				<PINMUX_GPIO52__FUNC_MSDC1_DAT3>,

@@ -418,9 +418,7 @@ static int do_set_ae_ctrl(struct adaptor_ctx *ctx,
 		ae_ctrl->exposure.arr[exp_count] != 0)
 		exp_count++;
 	dev_info(ctx->dev,
-			"sensor_idx %d, req id %d, exposure[LLLE->SSSE] %d %d %d %d %d ana_gain[LLLE->SSSE] %d %d %d %d %d, sub_tag:%u\n",
-			ctx->idx,
-			ae_ctrl->req_id,
+			"exposure[LLLE->SSSE] %d %d %d %d %d ana_gain[LLLE->SSSE] %d %d %d %d %d, sub_tag:%u\n",
 			ae_ctrl->exposure.le_exposure,
 			ae_ctrl->exposure.me_exposure,
 			ae_ctrl->exposure.se_exposure,
@@ -1172,7 +1170,6 @@ static int imgsensor_set_ctrl(struct v4l2_ctrl *ctrl)
 			notify_fsync_mgr_n_1_en(ctx, info->n, info->en);
 		}
 		break;
-
 	case V4L2_CID_MTK_SENSOR_TEST_PATTERN_DATA:
 		//struct mtk_test_pattern_data *info = ctrl->p_new.p;
 
@@ -1374,7 +1371,7 @@ static const struct v4l2_ctrl_config cfg_shutter_gain_sync = {
 	.name = "shutter_gain_sync",
 	.type = V4L2_CTRL_TYPE_U32,
 	.flags = V4L2_CTRL_FLAG_EXECUTE_ON_WRITE,
-	.max = 0xffff,
+	.max = 0xffffffff,
 	.step = 1,
 	.dims = {sizeof_u32(struct mtk_shutter_gain_sync)},
 };

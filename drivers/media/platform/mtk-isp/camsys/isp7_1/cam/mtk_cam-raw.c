@@ -76,11 +76,7 @@ MODULE_PARM_DESC(debug_dump_fbc, "debug: dump fbc");
 #define TGO_MAX_PXLMODE		8
 #define FRZ_PXLMODE_THRES		71
 #define MHz		1000000
-#define MTK_CAMSYS_PROC_DEFAULT_PIXELMODE	2
-#define DC_DEFAULT_CAMSV_PIXELMODE			8
-
-#define DC_SUPPORT_RAW_FEATURE_MASK	\
-	(STAGGER_2_EXPOSURE_LE_SE | STAGGER_2_EXPOSURE_SE_LE)
+#define MTK_CAMSYS_PROC_DEFAULT_PIXELMODE 2
 
 #define sizeof_u32(__struct__) ((sizeof(__struct__) + sizeof(u32) - 1)/ \
 				sizeof(u32))
@@ -190,31 +186,31 @@ enum cam_stagger_raw_select {
 static const struct cam_stagger_order stagger_mode_plan[] = {
 	[STAGGER_STREAM_PLAN_OTF_ALL] = {
 		.stagger_select = {
-			{.raw_select = RAW_SELECTION_AUTO, .mode_decision = HW_MODE_ON_THE_FLY},
-			{.raw_select = RAW_SELECTION_AUTO, .mode_decision = HW_MODE_ON_THE_FLY},
-			{.raw_select = RAW_SELECTION_AUTO, .mode_decision = HW_MODE_ON_THE_FLY},
-			{.raw_select = RAW_SELECTION_AUTO, .mode_decision = HW_MODE_ON_THE_FLY}
+			{.raw_select = RAW_SELECTION_AUTO, .mode_decision = STAGGER_ON_THE_FLY},
+			{.raw_select = RAW_SELECTION_AUTO, .mode_decision = STAGGER_ON_THE_FLY},
+			{.raw_select = RAW_SELECTION_AUTO, .mode_decision = STAGGER_ON_THE_FLY},
+			{.raw_select = RAW_SELECTION_AUTO, .mode_decision = STAGGER_ON_THE_FLY}
 			} },
 	[STAGGER_STREAM_PLAN_OFF_ALL] = {
 		.stagger_select = {
-			{.raw_select = RAW_SELECTION_C, .mode_decision = HW_MODE_OFFLINE},
-			{.raw_select = RAW_SELECTION_C, .mode_decision = HW_MODE_OFFLINE},
-			{.raw_select = RAW_SELECTION_C, .mode_decision = HW_MODE_OFFLINE},
-			{.raw_select = RAW_SELECTION_C, .mode_decision = HW_MODE_OFFLINE}
+			{.raw_select = RAW_SELECTION_C, .mode_decision = STAGGER_OFFLINE},
+			{.raw_select = RAW_SELECTION_C, .mode_decision = STAGGER_OFFLINE},
+			{.raw_select = RAW_SELECTION_C, .mode_decision = STAGGER_OFFLINE},
+			{.raw_select = RAW_SELECTION_C, .mode_decision = STAGGER_OFFLINE}
 			} },
 	[STAGGER_STREAM_PLAN_OTF_DCIF_OFF_2EXP] = {
 		.stagger_select = {
-			{.raw_select = RAW_SELECTION_AUTO, .mode_decision = HW_MODE_ON_THE_FLY},
-			{.raw_select = RAW_SELECTION_AUTO, .mode_decision = HW_MODE_DIRECT_COUPLED},
-			{.raw_select = RAW_SELECTION_AUTO, .mode_decision = HW_MODE_OFFLINE},
-			{.raw_select = RAW_SELECTION_AUTO, .mode_decision = HW_MODE_OFFLINE}
+			{.raw_select = RAW_SELECTION_AUTO, .mode_decision = STAGGER_ON_THE_FLY},
+			{.raw_select = RAW_SELECTION_AUTO, .mode_decision = STAGGER_DCIF},
+			{.raw_select = RAW_SELECTION_AUTO, .mode_decision = STAGGER_OFFLINE},
+			{.raw_select = RAW_SELECTION_AUTO, .mode_decision = STAGGER_OFFLINE}
 			} },
 	[STAGGER_STREAM_PLAN_OTF_DCIF_OFF_3EXP] = {
 		.stagger_select = {
-			{.raw_select = RAW_SELECTION_AB_AUTO, .mode_decision = HW_MODE_ON_THE_FLY},
-			{.raw_select = RAW_SELECTION_C, .mode_decision = HW_MODE_DIRECT_COUPLED},
-			{.raw_select = RAW_SELECTION_AUTO, .mode_decision = HW_MODE_OFFLINE},
-			{.raw_select = RAW_SELECTION_AUTO, .mode_decision = HW_MODE_OFFLINE}
+			{.raw_select = RAW_SELECTION_AB_AUTO, .mode_decision = STAGGER_ON_THE_FLY},
+			{.raw_select = RAW_SELECTION_C, .mode_decision = STAGGER_DCIF},
+			{.raw_select = RAW_SELECTION_AUTO, .mode_decision = STAGGER_OFFLINE},
+			{.raw_select = RAW_SELECTION_AUTO, .mode_decision = STAGGER_OFFLINE}
 			} },
 };
 
@@ -229,29 +225,10 @@ static const struct v4l2_mbus_framefmt mfmt_default = {
 	.quantization = V4L2_QUANTIZATION_DEFAULT,
 };
 
-static inline int mtk_pixelmode_val(int pxl_mode)
-{
-	int val = 0;
-
-	switch (pxl_mode) {
-	case 1:
-		val = 0;
-		break;
-	case 2:
-		val = 1;
-		break;
-	case 4:
-		val = 2;
-		break;
-	case 8:
-		val = 3;
-		break;
-	default:
-		break;
-	}
-
-	return val;
-}
+static bool mtk_raw_resource_calc(struct mtk_cam_device *cam,
+				  struct mtk_cam_resource_config *res,
+				  s64 pixel_rate, int res_plan,
+				  int in_w, int in_h, int *out_w, int *out_h);
 
 static int mtk_raw_get_ctrl(struct v4l2_ctrl *ctrl)
 {
@@ -276,10 +253,35 @@ static int mtk_raw_get_ctrl(struct v4l2_ctrl *ctrl)
 		dev_info(dev,
 			 "%s:pipe(%d): V4L2_CID_MTK_CAM_RAW_RESOURCE_UPDATE: %d\n",
 			 __func__, pipeline->id, pipeline->sensor_mode_update);
+	} else if (ctrl->id >= V4L2_CID_MTK_CAM_USED_ENGINE_TRY &&
+		   ctrl->id <= V4L2_CID_MTK_CAM_FRZ_TRY) {
+		/**
+		 * Read the determined resource for the "try" format
+		 * negotiation result
+		 */
+		mutex_lock(&pipeline->try_res_config.resource_lock);
+		switch (ctrl->id) {
+		case V4L2_CID_MTK_CAM_USED_ENGINE_TRY:
+			ctrl->val = pipeline->try_res_config.raw_num_used;
+			break;
+		case V4L2_CID_MTK_CAM_BIN_TRY:
+			ctrl->val = pipeline->try_res_config.bin_enable;
+			break;
+		case V4L2_CID_MTK_CAM_FRZ_TRY:
+			ctrl->val = pipeline->try_res_config.frz_enable ?
+				    pipeline->try_res_config.frz_ratio : 100;
+			break;
+		default:
+			dev_info(dev,
+				 "%s:pipe(%d): unknown resource CID: %d\n",
+				 __func__, pipeline->id, ctrl->id);
+			break;
+		}
+		mutex_unlock(&pipeline->try_res_config.resource_lock);
 	} else if (ctrl->id == V4L2_CID_MTK_CAM_SYNC_ID) {
 		mutex_lock(&pipeline->res_config.resource_lock);
 		*ctrl->p_new.p_s64 = pipeline->sync_id;
-		mutex_unlock(&pipeline->res_config.resource_lock);
+		mutex_unlock(&pipeline->try_res_config.resource_lock);
 	} else {
 		/**
 		 * Read the determined resource for the "set" format
@@ -313,6 +315,20 @@ static int mtk_raw_get_ctrl(struct v4l2_ctrl *ctrl)
 	dev_dbg(dev, "%s:pipe(%d):id(%s) val(%d)\n",
 		__func__, pipeline->id, ctrl->name, ctrl->val);
 	return ret;
+}
+
+static s64 mtk_cam_get_stagger_path(s64 hw_mode)
+{
+	switch (hw_mode) {
+	case ON_THE_FLY:
+		return STAGGER_ON_THE_FLY;
+	case DCIF:
+		return STAGGER_DCIF;
+	default:
+		break;
+	}
+
+	return STAGGER_ON_THE_FLY;
 }
 
 int
@@ -365,38 +381,23 @@ mtk_cam_res_copy_fmt_to_user(struct mtk_raw_pipeline *pipeline,
 }
 
 int mtk_cam_raw_res_store(struct mtk_raw_pipeline *pipeline,
-			  struct mtk_cam_resource *res_user, char *dbg_str, bool log)
+			  struct mtk_cam_resource *res_user)
 {
 	struct device *dev = pipeline->raw->devs[pipeline->id];
 
-	if (log)
-		dev_info(dev,
-			 "%s:%s:pipe(%d): from user: sensor:%d/%d/%lld/%lld/%d/%d, raw:%d/%d/%d/%d/%d/%d/%d/%d/%lld/%d\n",
-			 __func__, dbg_str, pipeline->id,
-			 res_user->sensor_res.hblank, res_user->sensor_res.vblank,
-			 res_user->sensor_res.pixel_rate,
-			 res_user->sensor_res.cust_pixel_rate,
-			 res_user->sensor_res.interval.denominator,
-			 res_user->sensor_res.interval.numerator,
-			 res_user->raw_res.feature, res_user->raw_res.bin,
-			 res_user->raw_res.path_sel, res_user->raw_res.raw_max,
-			 res_user->raw_res.raw_min, res_user->raw_res.raw_used,
-			 res_user->raw_res.strategy, res_user->raw_res.pixel_mode,
-			 res_user->raw_res.throughput, res_user->raw_res.hw_mode);
-	else
-		dev_dbg(dev,
-			"%s:%s:pipe(%d): from user: sensor:%d/%d/%lld/%lld/%d/%d, raw:%d/%d/%d/%d/%d/%d/%d/%d/%lld/%d\n",
-			__func__, dbg_str, pipeline->id,
-			res_user->sensor_res.hblank, res_user->sensor_res.vblank,
-			res_user->sensor_res.pixel_rate,
-			res_user->sensor_res.cust_pixel_rate,
-			res_user->sensor_res.interval.denominator,
-			res_user->sensor_res.interval.numerator,
-			res_user->raw_res.feature, res_user->raw_res.bin,
-			res_user->raw_res.path_sel, res_user->raw_res.raw_max,
-			res_user->raw_res.raw_min, res_user->raw_res.raw_used,
-			res_user->raw_res.strategy, res_user->raw_res.pixel_mode,
-			res_user->raw_res.throughput, res_user->raw_res.hw_mode);
+	dev_info(dev,
+		 "%s:pipe(%d): from user: sensor:%d/%d/%lld/%lld/%d/%d, raw:%d/%d/%d/%d/%d/%d/%d/%d/%lld\n",
+		 __func__, pipeline->id,
+		 res_user->sensor_res.hblank, res_user->sensor_res.vblank,
+		 res_user->sensor_res.pixel_rate,
+		 res_user->sensor_res.cust_pixel_rate,
+		 res_user->sensor_res.interval.denominator,
+		 res_user->sensor_res.interval.numerator,
+		 res_user->raw_res.feature, res_user->raw_res.bin,
+		 res_user->raw_res.path_sel, res_user->raw_res.raw_max,
+		 res_user->raw_res.raw_min, res_user->raw_res.raw_used,
+		 res_user->raw_res.strategy, res_user->raw_res.pixel_mode,
+		 res_user->raw_res.throughput);
 
 	/* check user value of sensor input parameters */
 	if (!mtk_cam_feature_is_pure_m2m(res_user->raw_res.feature) &&
@@ -405,20 +406,17 @@ int mtk_cam_raw_res_store(struct mtk_raw_pipeline *pipeline,
 	    !res_user->sensor_res.interval.denominator ||
 	    !res_user->sensor_res.interval.numerator)) {
 		dev_info(dev,
-			 "%s:%s:pipe(%d): sensor info MUST be provided (TEST_PATTERN case)\n",
-			 __func__, dbg_str, pipeline->id);
+			 "%s:pipe(%d): sensor info MUST be provided (TEST_PATTERN case)\n",
+			 __func__, pipeline->id);
 		/*test pattern case resource default copy*/
 		pipeline->res_config.raw_num_used = 1;
 		pipeline->res_config.bin_enable = 0;
 		pipeline->res_config.tgo_pxl_mode = 1;
-		pipeline->res_config.tgo_pxl_mode_before_raw = 1;
 		pipeline->res_config.raw_path = 0;
 		pipeline->res_config.hwn_limit_min = 1;
 		pipeline->res_config.raw_feature = res_user->raw_res.feature;
 		pipeline->feature_pending = res_user->raw_res.feature;
 		pipeline->feature_active = res_user->raw_res.feature;
-		pipeline->hw_mode = res_user->raw_res.hw_mode;
-		pipeline->hw_mode_pending = res_user->raw_res.hw_mode;
 		return 0;
 	}
 
@@ -444,27 +442,14 @@ int mtk_cam_raw_res_store(struct mtk_raw_pipeline *pipeline,
 	if (res_user->raw_res.path_sel == 0xFF)
 		res_user->raw_res.path_sel = 0;
 
-	if (res_user->raw_res.hw_mode == 0xFF)
-		res_user->raw_res.hw_mode = HW_MODE_DEFAULT;
-
-	if (log)
-		dev_info(dev,
-			 "%s:%s:pipe(%d): driver adjusted: raw:%d/%d/%d/%d/%d/%d/%d/%d/%lld/%d\n",
-			 __func__, dbg_str, pipeline->id,
-			 res_user->raw_res.feature, res_user->raw_res.bin,
-			 res_user->raw_res.path_sel, res_user->raw_res.raw_max,
-			 res_user->raw_res.raw_min, res_user->raw_res.raw_used,
-			 res_user->raw_res.strategy, res_user->raw_res.pixel_mode,
-			 res_user->raw_res.throughput, res_user->raw_res.hw_mode);
-	else
-		dev_dbg(dev,
-			"%s:%s:pipe(%d): driver adjusted: raw:%d/%d/%d/%d/%d/%d/%d/%d/%lld/%d\n",
-			__func__, dbg_str, pipeline->id,
-			res_user->raw_res.feature, res_user->raw_res.bin,
-			res_user->raw_res.path_sel, res_user->raw_res.raw_max,
-			res_user->raw_res.raw_min, res_user->raw_res.raw_used,
-			res_user->raw_res.strategy, res_user->raw_res.pixel_mode,
-			res_user->raw_res.throughput, res_user->raw_res.hw_mode);
+	dev_info(dev,
+		 "%s:pipe(%d): driver adjusted: raw:%d/%d/%d/%d/%d/%d/%d/%d/%lld\n",
+		 __func__, pipeline->id,
+		 res_user->raw_res.feature, res_user->raw_res.bin,
+		 res_user->raw_res.path_sel, res_user->raw_res.raw_max,
+		 res_user->raw_res.raw_min, res_user->raw_res.raw_used,
+		 res_user->raw_res.strategy, res_user->raw_res.pixel_mode,
+		 res_user->raw_res.throughput);
 
 	return 0;
 }
@@ -491,8 +476,7 @@ int
 mtk_cam_raw_try_res_ctrl(struct mtk_raw_pipeline *pipeline,
 			 struct mtk_cam_resource *res_user,
 			 struct mtk_cam_resource_config *res_cfg,
-			 struct v4l2_mbus_framefmt *sink_fmt,
-			 char *dbg_str, bool log)
+			 struct v4l2_mbus_framefmt *sink_fmt)
 {
 	s64 prate = 0;
 	int width, height;
@@ -508,17 +492,6 @@ mtk_cam_raw_try_res_ctrl(struct mtk_raw_pipeline *pipeline,
 	res_cfg->res_plan = res_user->raw_res.strategy;
 	res_cfg->raw_feature = res_user->raw_res.feature;
 	res_cfg->raw_path = res_user->raw_res.path_sel;
-	res_cfg->hw_mode = res_user->raw_res.hw_mode;
-
-	// currently only support normal & stagger 2-exp
-	if (res_cfg->hw_mode != 0) {
-		if (res_cfg->raw_feature & ~DC_SUPPORT_RAW_FEATURE_MASK) {
-			dev_info(dev, "feature(%d) not support hw_mode(%d)",
-				res_cfg->raw_feature, res_cfg->hw_mode);
-			res_cfg->hw_mode = HW_MODE_DEFAULT;
-			res_user->raw_res.hw_mode = HW_MODE_DEFAULT;
-		}
-	}
 
 	if (res_user->sensor_res.cust_pixel_rate)
 		prate = res_user->sensor_res.cust_pixel_rate;
@@ -537,18 +510,16 @@ mtk_cam_raw_try_res_ctrl(struct mtk_raw_pipeline *pipeline,
 	/*worst case throughput prepare for stagger dynamic switch exposure num*/
 	if (mtk_cam_feature_is_stagger(res_cfg->raw_feature)) {
 		if (mtk_cam_feature_is_2_exposure(res_cfg->raw_feature)) {
-			if (log)
-				dev_info(dev,
-					 "%s:%s:pipe(%d): worst case stagger 2exp prate (0x%x):%lld->%lld\n",
-					 __func__, dbg_str, pipeline->id, res_cfg->raw_feature,
-					 prate, prate * 3);
+			dev_info(dev,
+			 "%s:pipe(%d): worst case stagger 2exp prate (0x%x):%lld->%lld\n",
+			 __func__, pipeline->id, res_cfg->raw_feature,
+			 prate, prate * 3);
 			prate = 2 * prate;
 		} else if (mtk_cam_feature_is_3_exposure(res_cfg->raw_feature)) {
-			if (log)
-				dev_info(dev,
-					 "%s:%s:pipe(%d): worst case stagger 3exp prate (0x%x):%lld->%lld\n",
-					 __func__, dbg_str, pipeline->id, res_cfg->raw_feature,
-					 prate, prate * 3);
+			dev_info(dev,
+			 "%s:pipe(%d): worst case stagger 3exp prate (0x%x):%lld->%lld\n",
+			 __func__, pipeline->id, res_cfg->raw_feature,
+			 prate, prate * 3);
 			prate = 3 * prate;
 		}
 	}
@@ -559,8 +530,8 @@ mtk_cam_raw_try_res_ctrl(struct mtk_raw_pipeline *pipeline,
 
 	if (res_user->raw_res.bin && !res_cfg->bin_enable) {
 		dev_info(dev,
-			 "%s:%s:pipe(%d): res calc failed on fource bin: user(%d)/bin_enable(%d)\n",
-			 __func__, dbg_str, pipeline->id, res_user->raw_res.bin,
+			 "%s:pipe(%d): res calc failed on fource bin: user(%d)/bin_enable(%d)\n",
+			 __func__, pipeline->id,	res_user->raw_res.bin,
 			 res_cfg->bin_enable);
 		return -EINVAL;
 	}
@@ -568,8 +539,8 @@ mtk_cam_raw_try_res_ctrl(struct mtk_raw_pipeline *pipeline,
 	if (res_cfg->raw_num_used > res_user->raw_res.raw_max ||
 	    res_cfg->raw_num_used < res_user->raw_res.raw_min) {
 		dev_info(dev,
-			 "%s:%s: pipe(%d): res calc failed on raw used: user(%d/%d)/raw_num_used(%d)\n",
-			 __func__, dbg_str, pipeline->id, res_user->raw_res.raw_max,
+			 "%s:pipe(%d): res calc failed on raw used: user(%d/%d)/raw_num_used(%d)\n",
+			 __func__, pipeline->id, res_user->raw_res.raw_max,
 			 res_user->raw_res.raw_min, res_cfg->raw_num_used);
 	}
 
@@ -579,20 +550,12 @@ mtk_cam_raw_try_res_ctrl(struct mtk_raw_pipeline *pipeline,
 		res_user->raw_res.bin = res_cfg->bin_enable;
 	else
 		res_user->raw_res.bin = res_cfg->bin_limit;
-	res_user->sensor_res.driver_buffered_pixel_rate = prate;
 
-	if (log)
-		dev_info(dev,
-			 "%s:%s:pipe(%d): res calc result: raw_used(%d)/bin(%d)/pixelmode(%d)/strategy(%d)/hw_mode(%d)\n",
-			 __func__, dbg_str, pipeline->id, res_user->raw_res.raw_used,
-			 res_user->raw_res.bin, res_user->raw_res.pixel_mode,
-			 res_user->raw_res.strategy, res_user->raw_res.hw_mode);
-	else
-		dev_dbg(dev,
-			"%s:%s:pipe(%d): res calc result: raw_used(%d)/bin(%d)/pixelmode(%d)/strategy(%d)/hw_mode(%d)\n",
-			__func__, dbg_str, pipeline->id, res_user->raw_res.raw_used,
-			res_user->raw_res.bin, res_user->raw_res.pixel_mode,
-			res_user->raw_res.strategy, res_user->raw_res.hw_mode);
+	dev_info(dev,
+		 "%s:pipe(%d): res calc result: raw_used(%d)/bin(%d)/pixelmode(%d)/strategy(%d)\n",
+		 __func__, pipeline->id, res_user->raw_res.raw_used,
+		 res_user->raw_res.bin, res_user->raw_res.pixel_mode,
+		 res_user->raw_res.strategy);
 
 	/**
 	 * Other output not reveal to user now:
@@ -604,8 +567,8 @@ mtk_cam_raw_try_res_ctrl(struct mtk_raw_pipeline *pipeline,
 	 */
 	if (width != sink_fmt->width || height != sink_fmt->height) {
 		dev_info(dev,
-			 "%s:%s:pipe(%d): size adjust info: raw: sink(%d,%d) res:(%d,%d)\n",
-			 __func__, dbg_str, pipeline->id, sink_fmt->width,
+			 "%s:pipe(%d): size adjust info: raw: sink(%d,%d) res:(%d,%d)\n",
+			 __func__, pipeline->id, sink_fmt->width,
 			 sink_fmt->height, width, height);
 	}
 
@@ -625,16 +588,20 @@ static int mtk_cam_raw_set_res_ctrl(struct v4l2_ctrl *ctrl)
 	dev = pipeline->raw->devs[pipeline->id];
 	res_user = (struct mtk_cam_resource *)ctrl->p_new.p;
 
-	ret = mtk_cam_raw_res_store(pipeline, res_user, "s_ctrl", true);
+	ret = mtk_cam_raw_res_store(pipeline, res_user);
 	pipeline->user_res = *res_user;
-	pipeline->hw_mode = res_user->raw_res.hw_mode;
-	pipeline->hw_mode_pending = res_user->raw_res.hw_mode;
 	if (pipeline->subdev.entity.stream_count) {
 		/* If the pipeline is streaming, pending the change */
-		dev_dbg(dev, "%s:pipe(%d): pending res calc\n",
+		dev_dbg(dev, "%s:pipe(%d): pending res calc has not been supported except bin\n",
 			__func__, pipeline->id);
 		return ret;
 	}
+
+	dev_dbg(dev,
+		"%s:pipe(%d):streaming(%d), feature_pending(0x%x), raw_res.feature(0x%x), feature_active(0x%x)\n",
+		__func__, pipeline->id, pipeline->subdev.entity.stream_count,
+		pipeline->feature_pending, pipeline->user_res.raw_res.feature,
+		pipeline->feature_active);
 
 	ret = mtk_cam_res_copy_fmt_from_user(pipeline, res_user, &sink_fmt);
 	if (ret)
@@ -642,8 +609,7 @@ static int mtk_cam_raw_set_res_ctrl(struct v4l2_ctrl *ctrl)
 
 	pipeline->res_config.sink_fmt = sink_fmt;
 	ret = mtk_cam_raw_try_res_ctrl(pipeline, res_user,
-				       &pipeline->res_config, &sink_fmt,
-				       "s_ctrl", true);
+				       &pipeline->res_config, &sink_fmt);
 
 	if (ret)
 		return -EINVAL;
@@ -678,8 +644,20 @@ static int mtk_raw_set_res_ctrl(struct device *dev, struct v4l2_ctrl *ctrl,
 	case V4L2_CID_MTK_CAM_FRZ_LIMIT:
 		res_cfg->frz_limit = ctrl->val;
 		break;
+	case V4L2_CID_MTK_CAM_RESOURCE_PLAN_POLICY:
+		res_cfg->res_plan = ctrl->val;
+		break;
 	case V4L2_CID_MTK_CAM_RAW_PATH_SELECT:
 		res_cfg->raw_path = ctrl->val;
+		break;
+	case V4L2_CID_HBLANK:
+		res_cfg->hblank = ctrl->val;
+		break;
+	case V4L2_CID_VBLANK:
+		res_cfg->vblank = ctrl->val;
+		break;
+	case V4L2_CID_MTK_CAM_PIXEL_RATE:
+		res_cfg->sensor_pixel_rate = *ctrl->p_new.p_s64;
 		break;
 	case V4L2_CID_MTK_CAM_SYNC_ID:
 		pipeline->sync_id = *ctrl->p_new.p_s64;
@@ -717,7 +695,7 @@ static int mtk_raw_try_ctrl(struct v4l2_ctrl *ctrl)
 	switch (ctrl->id) {
 	case V4L2_CID_MTK_CAM_RAW_RESOURCE_CALC:
 		res_user = (struct mtk_cam_resource *)ctrl->p_new.p;
-		ret = mtk_cam_raw_res_store(pipeline, res_user, "try_ctrl", false);
+		ret = mtk_cam_raw_res_store(pipeline, res_user);
 		if (ret)
 			break;
 
@@ -731,9 +709,21 @@ static int mtk_raw_try_ctrl(struct v4l2_ctrl *ctrl)
 			break;
 		}
 
+		dev_dbg(dev, "%s:pipe(%d): res ctrl start\n", __func__,
+			pipeline->id);
 		ret = mtk_cam_raw_try_res_ctrl(pipeline, res_user, &res_cfg,
-					       &res_cfg.sink_fmt, "try_ctrl", false);
-		break;
+					       &res_cfg.sink_fmt);
+		if (ret)
+			break;
+
+		dev_dbg(dev,
+				"%s:pipe(%d):streaming(%d), feature_pending(0x%x), feature_active(0x%x)\n",
+				__func__, pipeline->id, pipeline->subdev.entity.stream_count,
+				pipeline->feature_pending, pipeline->feature_active);
+
+		dev_dbg(dev, "%s:pipe(%d): res ctrl end\n", __func__,
+			pipeline->id);
+			break;
 	case V4L2_CID_MTK_CAM_RAW_RESOURCE_UPDATE:
 		dev_info(dev,
 			 "%s:pipe(%d): skip V4L2_CID_MTK_CAM_RAW_RESOURCE_UPDATE: %d\n",
@@ -747,15 +737,13 @@ static int mtk_raw_try_ctrl(struct v4l2_ctrl *ctrl)
 	case V4L2_CID_MTK_CAM_MSTREAM_EXPOSURE:
 	case V4L2_CID_MTK_CAM_FEATURE:
 	case V4L2_CID_MTK_CAM_CAMSYS_HW_MODE:
-	case V4L2_CID_MTK_CAM_USED_ENGINE_LIMIT:
-	case V4L2_CID_MTK_CAM_BIN_LIMIT:
-	case V4L2_CID_MTK_CAM_FRZ_LIMIT:
-	case V4L2_CID_MTK_CAM_RAW_PATH_SELECT:
-	case V4L2_CID_MTK_CAM_SYNC_ID:
-	case V4L2_CID_MTK_CAM_HSF_EN:
 		ret = 0;
 		break;
 	default:
+		ret = mtk_raw_set_res_ctrl(pipeline->raw->devs[pipeline->id],
+					   ctrl,
+					   &pipeline->try_res_config,
+					   pipeline->id);
 		break;
 	}
 
@@ -803,12 +791,12 @@ static int mtk_raw_set_ctrl(struct v4l2_ctrl *ctrl)
 		break;
 	case V4L2_CID_MTK_CAM_CAMSYS_HW_MODE:
 	{
-		pipeline->hw_mode_pending = *ctrl->p_new.p_s64;
+		pipeline->hw_mode = *ctrl->p_new.p_s64;
 
 		dev_dbg(dev,
 			"%s:pipe(%d):streaming(%d), hw_mode(0x%x)\n",
 			__func__, pipeline->id, pipeline->subdev.entity.stream_count,
-			pipeline->hw_mode_pending);
+			pipeline->hw_mode);
 
 		ret = 0;
 	}
@@ -1029,6 +1017,28 @@ static const struct v4l2_ctrl_config frz_try = {
 	.def = 100,
 };
 
+static const struct v4l2_ctrl_config res_plan_policy = {
+	.ops = &cam_ctrl_ops,
+	.id = V4L2_CID_MTK_CAM_RESOURCE_PLAN_POLICY,
+	.name = "Resource planning policy",
+	.type = V4L2_CTRL_TYPE_INTEGER,
+	.min = 0,
+	.max = 10,
+	.step = 1,
+	.def = 1,
+};
+
+static const struct v4l2_ctrl_config res_pixel_rate = {
+	.ops = &cam_ctrl_ops,
+	.id = V4L2_CID_MTK_CAM_PIXEL_RATE,
+	.name = "Resource pixel rate",
+	.type = V4L2_CTRL_TYPE_INTEGER64,
+	.min = 0,
+	.max = 0xFFFFFFFF,
+	.step = 1,
+	.def = 0,
+};
+
 static const struct v4l2_ctrl_config frame_sync_id = {
 	.ops = &cam_ctrl_ops,
 	.id = V4L2_CID_MTK_CAM_SYNC_ID,
@@ -1116,7 +1126,7 @@ static const struct v4l2_ctrl_config mtk_camsys_hw_mode = {
 	.min = 0,
 	.max = 0x7FFFFFFF,
 	.step = 1,
-	.def = HW_MODE_DEFAULT,
+	.def = DEFAULT,
 };
 
 void trigger_rawi(struct mtk_raw_device *dev, struct mtk_cam_ctx *ctx,
@@ -1127,12 +1137,17 @@ void trigger_rawi(struct mtk_raw_device *dev, struct mtk_cam_ctx *ctx,
 
 	u32 cmd = 0;
 
-	if (hw_scene == MTKCAM_IPI_HW_PATH_OFFLINE_M2M)
-		cmd = TRIGGER_RAWI_R2;
-	else if (hw_scene == MTKCAM_IPI_HW_PATH_OFFLINE_STAGGER)
+	if (mtk_cam_is_stagger_m2m(ctx)) {
 		cmd = TRIGGER_RAWI_R6;
-
-	dev_dbg(dev->dev, "m2m %s, cmd:%d\n", __func__, cmd);
+	} else if (mtk_cam_is_mstream_m2m(ctx)) {
+		if (hw_scene == MTKCAM_IPI_HW_PATH_OFFLINE_M2M)
+			cmd = TRIGGER_RAWI_R2;
+		else if (hw_scene == MTKCAM_IPI_HW_PATH_OFFLINE_STAGGER)
+			cmd = TRIGGER_RAWI_R6;
+		pr_info("mstream %s, cmd:%d\n", __func__, cmd);
+	} else {
+		cmd = TRIGGER_RAWI_R2;
+	}
 
 	writel_relaxed(cmd, dev->base + REG_CTL_RAWI_TRIG);
 	wmb(); /* TBC */
@@ -1164,10 +1179,8 @@ void apply_cq(struct mtk_raw_device *dev,
 
 	if (initial)
 		dev_info(dev->dev,
-			"apply 1st raw%d cq - addr:0x%llx ,size:%d/%d,offset:%d,cq_en(0x%x),period(%d)\n",
-			dev->id, cq_addr, cq_size, sub_cq_size, sub_cq_offset,
-			readl_relaxed(dev->base + REG_CQ_EN),
-			readl_relaxed(dev->base + REG_SCQ_START_PERIOD));
+			"apply 1st raw%d cq - addr:0x%llx ,size:%d/%d,offset:%d\n",
+			dev->id, cq_addr, cq_size, sub_cq_size, sub_cq_offset);
 	else
 		dev_dbg(dev->dev,
 			"apply raw%d cq - addr:0x%llx ,size:%d/%d,offset:%d\n",
@@ -1471,7 +1484,6 @@ void set_fifo_threshold(void __iomem *dma_base)
 	int fifo_size = 0;
 
 	fifo_size = readl_relaxed(dma_base + DMA_OFFSET_CON0) & 0xFFF;
-
 	writel_relaxed((0x1 << 28) | FIFO_THRESHOLD(fifo_size, 1/4, 1/8),
 			dma_base + DMA_OFFSET_CON1);
 	writel_relaxed((0x1 << 28) | FIFO_THRESHOLD(fifo_size, 1/2, 3/8),
@@ -1532,16 +1544,12 @@ void enable_tg_db(struct mtk_raw_device *dev, int en)
 	}
 }
 
+
 static void init_dma_threshold(struct mtk_raw_device *dev)
 {
 	struct mtk_cam_device *cam_dev;
-	struct mtk_yuv_device *yuv_dev = get_yuv_dev(dev);
-	bool is_srt = mtk_cam_is_srt(dev->pipeline->hw_mode);
-	unsigned int raw_urgent, yuv_urgent;
 
 	cam_dev = dev->cam;
-
-	dev_info(dev->dev, "%s: SRT:%d\n", __func__, is_srt);
 
 	set_fifo_threshold(dev->base + REG_IMGO_R1_BASE);
 	set_fifo_threshold(dev->base + REG_FHO_R1_BASE);
@@ -1596,44 +1604,27 @@ static void init_dma_threshold(struct mtk_raw_device *dev)
 	set_fifo_threshold(dev->base + REG_PDI_R1_BASE);
 	set_fifo_threshold(dev->base + REG_AAI_R1_BASE);
 	set_fifo_threshold(dev->base + REG_CACI_R1_BASE);
-	set_fifo_threshold(dev->base + REG_RAWI_R5_BASE);
 	set_fifo_threshold(dev->base + REG_RAWI_R6_BASE);
 
-	// TODO: move HALT1,2 to camsv
-	writel_relaxed(CAMSV_1_WDMA_PORT, cam_dev->base + REG_HALT1_EN);
-	writel_relaxed(CAMSV_2_WDMA_PORT, cam_dev->base + REG_HALT2_EN);
+	writel_relaxed(0x1, cam_dev->base + REG_HALT1_EN);
+	writel_relaxed(0x1, cam_dev->base + REG_HALT2_EN);
+	writel_relaxed(0x1, cam_dev->base + REG_HALT3_EN);
+	writel_relaxed(0x1, cam_dev->base + REG_HALT4_EN);
+	writel_relaxed(0x1, cam_dev->base + REG_HALT5_EN);
+	writel_relaxed(0x1, cam_dev->base + REG_HALT6_EN);
+	writel_relaxed(0x1, cam_dev->base + REG_ULTRA_HALT1_EN);
+	writel_relaxed(0x1, cam_dev->base + REG_ULTRA_HALT2_EN);
+	writel_relaxed(0x1, cam_dev->base + REG_ULTRA_HALT3_EN);
+	writel_relaxed(0x1, cam_dev->base + REG_ULTRA_HALT4_EN);
+	writel_relaxed(0x1, cam_dev->base + REG_ULTRA_HALT5_EN);
+	writel_relaxed(0x1, cam_dev->base + REG_ULTRA_HALT6_EN);
+	writel_relaxed(0x1, cam_dev->base + REG_PREULTRA_HALT1_EN);
+	writel_relaxed(0x1, cam_dev->base + REG_PREULTRA_HALT2_EN);
+	writel_relaxed(0x1, cam_dev->base + REG_PREULTRA_HALT3_EN);
+	writel_relaxed(0x1, cam_dev->base + REG_PREULTRA_HALT4_EN);
+	writel_relaxed(0x1, cam_dev->base + REG_PREULTRA_HALT5_EN);
+	writel_relaxed(0x1, cam_dev->base + REG_PREULTRA_HALT6_EN);
 
-	switch (dev->id) {
-	case MTKCAM_SUBDEV_RAW_0:
-		raw_urgent = REG_HALT5_EN;
-		yuv_urgent = REG_HALT6_EN;
-		break;
-	case MTKCAM_SUBDEV_RAW_1:
-		raw_urgent = REG_HALT7_EN;
-		yuv_urgent = REG_HALT8_EN;
-		break;
-	case MTKCAM_SUBDEV_RAW_2:
-		raw_urgent = REG_HALT9_EN;
-		yuv_urgent = REG_HALT10_EN;
-		break;
-	default:
-		dev_info(dev->dev, "%s: unknown raw id %d\n", __func__, dev->id);
-		return;
-	}
-
-	if (is_srt) {
-		writel_relaxed(0x0, cam_dev->base + raw_urgent);
-		writel_relaxed(0x0, cam_dev->base + yuv_urgent);
-
-		mtk_smi_larb_ultra_dis(&dev->larb_pdev->dev, true);
-		mtk_smi_larb_ultra_dis(&yuv_dev->larb_pdev->dev, true);
-	} else {
-		writel_relaxed(RAW_WDMA_PORT, cam_dev->base + raw_urgent);
-		writel_relaxed(YUV_WDMA_PORT, cam_dev->base + yuv_urgent);
-
-		mtk_smi_larb_ultra_dis(&dev->larb_pdev->dev, false);
-		mtk_smi_larb_ultra_dis(&yuv_dev->larb_pdev->dev, false);
-	}
 }
 
 int get_fps_ratio(struct mtk_raw_device *dev)
@@ -1750,7 +1741,7 @@ void initialize(struct mtk_raw_device *dev, int is_slave)
 	u32 val;
 
 	val = readl_relaxed(dev->base + REG_CQ_EN);
-	writel_relaxed(val | SCQ_EN | CQ_DROP_FRAME_EN, dev->base + REG_CQ_EN);
+	writel_relaxed(val | SCQ_EN, dev->base + REG_CQ_EN);
 
 	//writel_relaxed(0x100010, dev->base + REG_CQ_EN);
 	writel_relaxed(0xffffffff, dev->base + REG_SCQ_START_PERIOD);
@@ -1908,7 +1899,7 @@ void stream_on(struct mtk_raw_device *dev, int on)
 			fps_ratio = get_fps_ratio(dev);
 			dev_info(dev->dev, "VF on - REG_TG_TIME_STAMP_CNT val:%d fps(30x):%d\n",
 			val, fps_ratio);
-			if (mtk_cam_feature_is_stagger(feature))
+			if (dev->stagger_en)
 				writel_relaxed(SCQ_DEADLINE_MS * 3 * 1000 * SCQ_DEFAULT_CLK_RATE /
 				(val * 2) / fps_ratio, dev->base + REG_SCQ_START_PERIOD);
 			else
@@ -1925,9 +1916,6 @@ void stream_on(struct mtk_raw_device *dev, int on)
 			mtk_cam_set_topdebug_rdyreq(dev->dev, dev->base, dev->yuv_base,
 				TG_OVERRUN);
 			dev->overrun_debug_dump_cnt = 0;
-			enable_tg_db(dev, 0);
-			enable_tg_db(dev, 1);
-			toggle_db(dev);
 			if (feature & MTK_CAM_FEATURE_TIMESHARE_MASK ||
 				feature & MTK_CAM_FEATURE_OFFLINE_M2M_MASK) {
 				dev_info(dev->dev, "[%s] M2M view finder disable\n", __func__);
@@ -2050,11 +2038,10 @@ static void mtk_raw_update_debug_param(struct mtk_cam_device *cam,
 	if (!debug_raw)
 		return;
 
-	dev_dbg(cam->dev, "%s:before:BIN/FRZ/HWN/CLK/pxl/pxl(seninf):", __func__);
-	dev_dbg(cam->dev, "%d/%d(%d)/%d/%d/%d/%d, clk:%d\n",
-		res->bin_enable, res->frz_enable, res->frz_ratio,
+	dev_dbg(cam->dev, "%s:before:BIN/FRZ/HWN/CLK/pxl=%d/%d(%d)/%d/%d/%d, clk:%d\n",
+		__func__, res->bin_enable, res->frz_enable, res->frz_ratio,
 		res->raw_num_used, *clk_idx, res->tgo_pxl_mode,
-		res->tgo_pxl_mode_before_raw, res->clk_target);
+		res->clk_target);
 
 	if (debug_raw_num > 0) {
 		dev_info(cam->dev, "DEBUG: force raw_num_used: %d\n",
@@ -2066,7 +2053,6 @@ static void mtk_raw_update_debug_param(struct mtk_cam_device *cam,
 		dev_info(cam->dev, "DEBUG: force debug_pixel_mode (log2): %d\n",
 			 debug_pixel_mode);
 		res->tgo_pxl_mode = debug_pixel_mode;
-		res->tgo_pxl_mode_before_raw = debug_pixel_mode;
 	}
 
 	if (debug_clk_idx >= 0) {
@@ -2076,11 +2062,10 @@ static void mtk_raw_update_debug_param(struct mtk_cam_device *cam,
 		res->clk_target = clk->clklv[debug_clk_idx];
 	}
 
-	dev_dbg(cam->dev,
-		"%s:after:BIN/FRZ/HWN/CLK/pxl/pxl(seninf)=%d/%d(%d)/%d/%d/%d/%d, clk:%d\n",
+	dev_dbg(cam->dev, "%s:after:BIN/FRZ/HWN/CLK/pxl=%d/%d(%d)/%d/%d/%d, clk:%d\n",
 		__func__, res->bin_enable, res->frz_enable, res->frz_ratio,
 		res->raw_num_used, *clk_idx, res->tgo_pxl_mode,
-		res->tgo_pxl_mode_before_raw, res->clk_target);
+		res->clk_target);
 
 }
 
@@ -2096,16 +2081,15 @@ static bool is_cbn_en(int bin_flag)
 	}
 }
 
-bool mtk_raw_resource_calc(struct mtk_cam_device *cam,
-			   struct mtk_cam_resource_config *res,
-			   s64 pixel_rate, int res_plan,
-			   int in_w, int in_h, int *out_w, int *out_h)
+static bool mtk_raw_resource_calc(struct mtk_cam_device *cam,
+				  struct mtk_cam_resource_config *res,
+				  s64 pixel_rate, int res_plan,
+				  int in_w, int in_h, int *out_w, int *out_h)
 {
 	struct mtk_camsys_dvfs *clk = &cam->camsys_ctrl.dvfs_info;
 	u64 eq_throughput = clk->clklv[0];
 	int res_step_type = 0;
 	int tgo_pxl_mode = 1;
-	int tgo_pxl_mode_before_raw = 1;
 	int pixel_mode[MTK_CAMSYS_RES_STEP_NUM] = {0};
 	int bin_temp = 0, frz_temp = 0, hwn_temp = 0;
 	int bin_en = 0, frz_en = 0, twin_en = 0, clk_cur = 0;
@@ -2114,7 +2098,6 @@ bool mtk_raw_resource_calc(struct mtk_cam_device *cam,
 	int lb_chk_res = -1;
 	int frz_ratio = 100;
 	int p;
-	bool find_max = 0;
 
 	res->res_plan = res_plan;
 	res->pixel_rate = pixel_rate;
@@ -2182,16 +2165,11 @@ bool mtk_raw_resource_calc(struct mtk_cam_device *cam,
 					res->frz_limit < FRZ_PXLMODE_THRES
 					? res->frz_limit : FRZ_PXLMODE_THRES;
 		}
-		if (res->raw_feature & MTK_CAM_FEATURE_TIMESHARE_MASK ||
-			res->hw_mode == HW_MODE_DIRECT_COUPLED) {
-			if (res->raw_feature & MTK_CAM_FEATURE_TIMESHARE_MASK)
-				find_max = true;
-
+		if (res->raw_feature & MTK_CAM_FEATURE_TIMESHARE_MASK) {
 			tgo_pxl_mode = mtk_raw_pixelmode_calc(MTK_CAMSYS_PROC_DEFAULT_PIXELMODE,
-				twin_en, bin_en, frz_en, res->frz_ratio);
+					twin_en, bin_en, frz_en, res->frz_ratio);
 			pixel_mode[idx] = tgo_pxl_mode;
-			if ((lb_chk_res == LB_CHECK_OK) &&
-				(find_max || res_found == false)) {
+			if (lb_chk_res == LB_CHECK_OK) {
 				res->bin_enable = bin_en;
 				res->frz_enable = frz_en;
 				res->raw_num_used = twin_en + 1;
@@ -2233,22 +2211,31 @@ bool mtk_raw_resource_calc(struct mtk_cam_device *cam,
 	}
 
 	tgo_pxl_mode = pixel_mode[idx_res];
-	res->tgo_pxl_mode = mtk_pixelmode_val(tgo_pxl_mode);
-
-	tgo_pxl_mode_before_raw = (res->hw_mode == HW_MODE_DIRECT_COUPLED) ?
-		DC_DEFAULT_CAMSV_PIXELMODE : tgo_pxl_mode;
-	res->tgo_pxl_mode_before_raw = mtk_pixelmode_val(tgo_pxl_mode_before_raw);
+	switch (tgo_pxl_mode) {
+	case 1:
+		res->tgo_pxl_mode = 0;
+		break;
+	case 2:
+		res->tgo_pxl_mode = 1;
+		break;
+	case 4:
+		res->tgo_pxl_mode = 2;
+		break;
+	case 8:
+		res->tgo_pxl_mode = 3;
+		break;
+	default:
+		break;
+	}
 
 	mtk_raw_update_debug_param(cam, res, &clk_res);
 
 	eq_throughput = ((u64)(1 << res->tgo_pxl_mode)) * res->clk_target;
 	if (res_found) {
-		dev_info(cam->dev, "Res-end:%d BIN/FRZ/HWN/CLK/pxl/pxl(seninf):", idx_res);
-		dev_info(cam->dev,
-			"%d/%d(%d)/%d/%d/%d/%d:%10llu, clk:%d\n",
-			res->bin_enable, res->frz_enable, res->frz_ratio,
-			res->raw_num_used, clk_res, res->tgo_pxl_mode,
-			res->tgo_pxl_mode_before_raw, eq_throughput, res->clk_target);
+		dev_info(cam->dev, "Res-end:%d BIN/FRZ/HWN/CLK/pxl=%d/%d(%d)/%d/%d/%d:%10llu, clk:%d\n",
+			idx_res, res->bin_enable, res->frz_enable, res->frz_ratio,
+			res->raw_num_used, clk_res, res->tgo_pxl_mode, eq_throughput,
+			res->clk_target);
 	} else {
 		dev_dbg(cam->dev, "[%s] Error resource result; use %dMhz\n",
 			__func__, clk->clklv[clk_cur]);
@@ -2316,12 +2303,6 @@ static void raw_handle_error(struct mtk_raw_device *raw_dev,
 		}
 		raw_irq_handle_tg_overrun_err(raw_dev, frame_idx_inner);
 	}
-
-	if (err_status & INT_ST_MASK_CAM_DBG) {
-		dev_info(raw_dev->dev, "%s: err_status:0x%x\n",
-			__func__, err_status);
-	}
-
 }
 
 static bool is_sub_sample_sensor_timing(struct mtk_raw_device *dev)
@@ -2369,10 +2350,6 @@ static irqreturn_t mtk_irq_raw(int irq, void *data)
 		goto ctx_not_found;
 	}
 
-	/* SRT err interrupt */
-	if (irq_status & P1_DONE_OVER_SOF_INT_ST)
-		dev_dbg(dev, "P1_DONE_OVER_SOF_INT_ST");
-
 	irq_info.irq_type = 0;
 	irq_info.ts_ns = ktime_get_boottime_ns();
 	irq_info.frame_idx = frame_idx;
@@ -2387,30 +2364,20 @@ static irqreturn_t mtk_irq_raw(int irq, void *data)
 		irq_info.irq_type |= 1 << CAMSYS_IRQ_AFO_DONE;
 		/* enable AFO_DONE_EN at backend manually */
 	}
-
-	/* Frame skipped */
-	if (irq_status & P1_SKIP_FRAME_INT_ST)
-		irq_info.irq_type |= 1 << CAMSYS_IRQ_FRAME_SKIPPED;
-
 	/* Frame done */
 	if (irq_status & SW_PASS1_DON_ST) {
 		irq_info.irq_type |= 1 << CAMSYS_IRQ_FRAME_DONE;
 		raw_dev->overrun_debug_dump_cnt = 0;
 	}
 	/* Frame start */
-	if (irq_status & SOF_INT_ST || irq_status & DCIF_SUB_SOF_INT_EN) {
+	if (irq_status & SOF_INT_ST) {
 		irq_info.irq_type |= 1 << CAMSYS_IRQ_FRAME_START;
-		raw_dev->sof_count++;
+
 		raw_dev->cur_vsync_idx = 0;
-		raw_dev->last_sof_time_ns = irq_info.ts_ns;
+		raw_dev->sof_count++;
 		irq_info.write_cnt = ((fbc_fho_ctl2 & WCNT_BIT_MASK) >> 8) - 1;
 		irq_info.fbc_cnt = (fbc_fho_ctl2 & CNT_BIT_MASK) >> 16;
 	}
-
-	/* DCIF main sof */
-	if (irq_status & DCIF_SOF_INT_EN)
-		irq_info.irq_type |= 1 << CAMSYS_IRQ_FRAME_START_DCIF_MAIN;
-
 	/* Vsync interrupt */
 	if (irq_status & VS_INT_ST)
 		raw_dev->vsync_count++;
@@ -2894,7 +2861,6 @@ static int mtk_raw_of_probe(struct platform_device *pdev,
 					pdev->dev.of_node, "mediatek,larbs", NULL);
 	dev_info(dev, "larb_num:%d\n", larbs);
 
-	raw->larb_pdev = NULL;
 	for (i = 0; i < larbs; i++) {
 		larb_node = of_parse_phandle(
 					pdev->dev.of_node, "mediatek,larbs", i);
@@ -2915,8 +2881,6 @@ static int mtk_raw_of_probe(struct platform_device *pdev,
 						DL_FLAG_PM_RUNTIME | DL_FLAG_STATELESS);
 		if (!link)
 			dev_info(dev, "unable to link smi larb%d\n", i);
-		else
-			raw->larb_pdev = larb_pdev;
 	}
 
 #ifdef CONFIG_PM_SLEEP
@@ -2964,7 +2928,7 @@ static int mtk_raw_available_resource(struct mtk_raw *raw)
 				res_status |= 1 << j;
 		}
 	}
-	dev_dbg(raw->cam_dev, "%s raw_status:0x%x Available Engine:A/B/C:%d/%d/%d\n",
+	dev_info(raw->cam_dev, "%s raw_status:0x%x Available Engine:A/B/C:%d/%d/%d\n",
 		 __func__, res_status,
 			!(res_status & (1 << MTKCAM_SUBDEV_RAW_0)),
 			!(res_status & (1 << MTKCAM_SUBDEV_RAW_1)),
@@ -2997,11 +2961,12 @@ static int raw_stagger_select(struct mtk_cam_ctx *ctx,
 		ctx_chk = &cam->ctxs[i];
 		if (ctx_chk != ctx && ctx_chk->streaming && mtk_cam_is_stagger(ctx_chk)) {
 			for (m = 0; m < STAGGER_MAX_STREAM_NUM; m++) {
-				mode = stagger_order.stagger_select[m].mode_decision;
+				mode = (pipe_hw_mode) ?
+					mtk_cam_get_stagger_path(pipe_hw_mode) :
+					stagger_order.stagger_select[m].mode_decision;
 				dev_info(cam->dev, "[%s:stagger check] i:%d/m:%d; mode:%d\n",
 				__func__, i, m, mode);
-				// TODO: hw_mode or hw_mode_pending
-				if (mode == ctx_chk->pipe->hw_mode) {
+				if (mode == ctx_chk->pipe->stagger_path) {
 					stagger_order_mask[m] = 1;
 					break;
 				}
@@ -3018,11 +2983,12 @@ static int raw_stagger_select(struct mtk_cam_ctx *ctx,
 	for (i = 0; i < stagger_ctx_num + 1; i++) {
 		if (stagger_order_mask[i] == 0) {
 			stagger_select = stagger_order.stagger_select[i];
-			result->hw_mode = (pipe_hw_mode == HW_MODE_DEFAULT) ?
-				stagger_select.mode_decision : pipe_hw_mode;
-			dev_info(cam->dev, "[%s:plan:%d] raw_status 0x%x, stagger_select_raw_mask:0x%x hw mode:0x%x\n",
+			result->stagger_path = (pipe_hw_mode) ?
+				mtk_cam_get_stagger_path(pipe_hw_mode) :
+				stagger_select.mode_decision;
+			dev_info(cam->dev, "[%s:plan:%d] raw_status 0x%x, stagger_select_raw_mask:0x%x mode:0x%x\n",
 				__func__, i, raw_status, stagger_select.raw_select,
-				result->hw_mode);
+				result->stagger_path);
 		}
 	}
 
@@ -3052,11 +3018,11 @@ int mtk_cam_raw_stagger_select(struct mtk_cam_ctx *ctx,
 
 	selected = raw_stagger_select(ctx,
 				raw_status,
-				pipe->user_res.raw_res.hw_mode,
+				pipe->hw_mode,
 				&result);
 
-	ctx->pipe->hw_mode_pending = result.hw_mode;
-	ctx->pipe->hw_mode = ctx->pipe->hw_mode_pending;
+	ctx->pipe->stagger_path_pending = result.stagger_path;
+	ctx->pipe->stagger_path = ctx->pipe->stagger_path_pending;
 	pipe->enabled_raw |= result.enabled_raw;
 
 	return selected;
@@ -3088,7 +3054,7 @@ static int mtk_cam_s_data_raw_stagger_select(struct mtk_cam_request_stream_data 
 				pipe->hw_mode,
 				result);
 
-	ctx->pipe->hw_mode_pending = result->hw_mode;
+	ctx->pipe->stagger_path_pending = result->stagger_path;
 	s_raw_pipe_data->enabled_raw |= result->enabled_raw;
 
 	return selected;
@@ -3357,7 +3323,7 @@ bool mtk_raw_fmt_get_res(struct v4l2_subdev *sd,
 		return false;
 	}
 
-	dev_dbg(sd->v4l2_dev->dev, "%s:sensor:%d/%d/%lld/%d/%d, raw:%d/%d/%d/%d/%d/%d/%d/%d/%lld/%d\n",
+	dev_dbg(sd->v4l2_dev->dev, "%s:sensor:%d/%d/%lld/%d/%d, raw:%d/%d/%d/%d/%d/%d/%d/%d/%lld\n",
 		__func__,
 		res->sensor_res.hblank, res->sensor_res.vblank,
 		res->sensor_res.pixel_rate,	res->sensor_res.interval.denominator,
@@ -3365,7 +3331,7 @@ bool mtk_raw_fmt_get_res(struct v4l2_subdev *sd,
 		res->raw_res.feature, res->raw_res.bin, res->raw_res.path_sel,
 		res->raw_res.raw_max, res->raw_res.raw_min, res->raw_res.raw_used,
 		res->raw_res.strategy, res->raw_res.pixel_mode,
-		res->raw_res.throughput, res->raw_res.hw_mode);
+		res->raw_res.throughput);
 
 	return res;
 }
@@ -3792,51 +3758,6 @@ int mtk_raw_try_pad_fmt(struct v4l2_subdev *sd,
 	return 0;
 }
 
-unsigned int mtk_cam_get_rawi_sensor_pixel_fmt(unsigned int fmt)
-{
-	// return V4L2_PIX_FMT_MTISP for matching
-	// length returned by mtk_cam_get_pixel_bits()
-	// with ipi_fmt returned by mtk_cam_get_sensor_fmt()
-
-	switch (fmt & SENSOR_FMT_MASK) {
-	case MEDIA_BUS_FMT_SBGGR8_1X8:
-		return V4L2_PIX_FMT_SBGGR8;
-	case MEDIA_BUS_FMT_SGBRG8_1X8:
-		return V4L2_PIX_FMT_SGBRG8;
-	case MEDIA_BUS_FMT_SGRBG8_1X8:
-		return V4L2_PIX_FMT_SGRBG8;
-	case MEDIA_BUS_FMT_SRGGB8_1X8:
-		return V4L2_PIX_FMT_SRGGB8;
-	case MEDIA_BUS_FMT_SBGGR10_1X10:
-		return V4L2_PIX_FMT_MTISP_SBGGR10;
-	case MEDIA_BUS_FMT_SGBRG10_1X10:
-		return V4L2_PIX_FMT_MTISP_SGBRG10;
-	case MEDIA_BUS_FMT_SGRBG10_1X10:
-		return V4L2_PIX_FMT_MTISP_SGRBG10;
-	case MEDIA_BUS_FMT_SRGGB10_1X10:
-		return V4L2_PIX_FMT_MTISP_SGRBG10;
-	case MEDIA_BUS_FMT_SBGGR12_1X12:
-		return V4L2_PIX_FMT_MTISP_SBGGR12;
-	case MEDIA_BUS_FMT_SGBRG12_1X12:
-		return V4L2_PIX_FMT_MTISP_SGBRG12;
-	case MEDIA_BUS_FMT_SGRBG12_1X12:
-		return V4L2_PIX_FMT_MTISP_SGRBG12;
-	case MEDIA_BUS_FMT_SRGGB12_1X12:
-		return V4L2_PIX_FMT_MTISP_SRGGB12;
-	case MEDIA_BUS_FMT_SBGGR14_1X14:
-		return V4L2_PIX_FMT_MTISP_SBGGR14;
-	case MEDIA_BUS_FMT_SGBRG14_1X14:
-		return V4L2_PIX_FMT_MTISP_SGBRG14;
-	case MEDIA_BUS_FMT_SGRBG14_1X14:
-		return V4L2_PIX_FMT_MTISP_SGRBG14;
-	case MEDIA_BUS_FMT_SRGGB14_1X14:
-		return V4L2_PIX_FMT_MTISP_SRGGB14;
-	default:
-		break;
-	}
-	return V4L2_PIX_FMT_MTISP_SBGGR14;
-}
-
 static int mtk_raw_call_set_fmt(struct v4l2_subdev *sd,
 				struct v4l2_subdev_pad_config *cfg,
 				struct v4l2_subdev_format *fmt,
@@ -3846,7 +3767,6 @@ static int mtk_raw_call_set_fmt(struct v4l2_subdev *sd,
 		container_of(sd, struct mtk_raw_pipeline, subdev);
 	struct mtk_raw *raw = pipe->raw;
 	struct v4l2_mbus_framefmt *mf;
-	unsigned int sink_ipi_fmt = MTKCAM_IPI_IMG_FMT_UNKNOWN;
 
 	if (!sd || !fmt) {
 		dev_dbg(raw->cam_dev, "%s: Required sd(%p), fmt(%p)\n",
@@ -3862,7 +3782,7 @@ static int mtk_raw_call_set_fmt(struct v4l2_subdev *sd,
 
 
 	if (!mtk_raw_try_fmt(sd, fmt) &&
-		!mtk_cam_feature_is_pure_m2m(
+			!mtk_cam_feature_is_pure_m2m(
 			pipe->feature_pending)) {
 		mf = mtk_raw_pipeline_get_fmt(pipe, cfg, fmt->pad, fmt->which);
 		fmt->format = *mf;
@@ -3883,39 +3803,9 @@ static int mtk_raw_call_set_fmt(struct v4l2_subdev *sd,
 		struct v4l2_format *img_fmt;
 
 		if (fmt->which == V4L2_SUBDEV_FORMAT_ACTIVE) {
-			img_fmt = &pipe->vdev_nodes[MTK_RAW_SINK].sink_fmt_for_dc_rawi;
-			img_fmt->fmt.pix_mp.width = mf->width;
-			img_fmt->fmt.pix_mp.height = mf->height;
-
-			sink_ipi_fmt = mtk_cam_get_sensor_fmt(mf->code);
-
-			if (sink_ipi_fmt == MTKCAM_IPI_IMG_FMT_UNKNOWN) {
-				dev_info(raw->cam_dev,
-					"%s: sink_ipi_fmt not found\n");
-
-				sink_ipi_fmt = MTKCAM_IPI_IMG_FMT_BAYER14;
-			}
-
-			img_fmt->fmt.pix_mp.pixelformat =
-				mtk_cam_get_rawi_sensor_pixel_fmt(mf->code);
-
-			img_fmt->fmt.pix_mp.plane_fmt[0].bytesperline =
-				mtk_cam_dmao_xsize(mf->width, sink_ipi_fmt, 3);
-			img_fmt->fmt.pix_mp.plane_fmt[0].sizeimage =
-				img_fmt->fmt.pix_mp.plane_fmt[0].bytesperline *
-				img_fmt->fmt.pix_mp.height;
-
 			img_fmt = &pipe->vdev_nodes[MTK_RAW_SINK].pending_fmt;
-
 			img_fmt->fmt.pix_mp.width = mf->width;
 			img_fmt->fmt.pix_mp.height = mf->height;
-
-			dev_dbg(raw->cam_dev,
-				"%s: sd:%s update sink pad format %dx%d code 0x%x\n",
-				__func__, sd->name,
-				img_fmt->fmt.pix_mp.width,
-				img_fmt->fmt.pix_mp.height,
-				mf->code);
 		}
 
 		source_mf = mtk_raw_pipeline_get_fmt(pipe, cfg,
@@ -4057,11 +3947,11 @@ unsigned int mtk_raw_get_hdr_scen_id(
 	unsigned int hw_scen =
 		(1 << MTKCAM_IPI_HW_PATH_ON_THE_FLY_DCIF_STAGGER);
 
-	if (mtk_cam_hw_is_otf(ctx))
+	if (ctx->pipe->stagger_path == STAGGER_ON_THE_FLY)
 		hw_scen = (1 << MTKCAM_IPI_HW_PATH_ON_THE_FLY_DCIF_STAGGER);
-	else if (mtk_cam_hw_is_dc(ctx))
+	else if (ctx->pipe->stagger_path == STAGGER_DCIF)
 		hw_scen = (1 << MTKCAM_IPI_HW_PATH_OFFLINE_SRT_DCIF_STAGGER);
-	else if (mtk_cam_hw_is_offline(ctx))
+	else if (ctx->pipe->stagger_path == STAGGER_OFFLINE)
 		hw_scen = (1 << MTKCAM_IPI_HW_PATH_OFFLINE_STAGGER);
 
 	return hw_scen;
@@ -4087,21 +3977,9 @@ static int mtk_cam_media_link_setup(struct media_entity *entity,
 	if (!entity->stream_count && !(flags & MEDIA_LNK_FL_ENABLED))
 		memset(pipe->cfg, 0, sizeof(pipe->cfg));
 
-	if (pad == MTK_RAW_SINK && flags & MEDIA_LNK_FL_ENABLED) {
-		struct mtk_seninf_pad_data_info result;
+	if (pad == MTK_RAW_SINK && flags & MEDIA_LNK_FL_ENABLED)
 		pipe->res_config.seninf =
 			media_entity_to_v4l2_subdev(remote->entity);
-		mtk_cam_seninf_get_pad_data_info(pipe->res_config.seninf,
-			PAD_SRC_GENERAL0, &result);
-		if (result.exp_hsize) {
-			pipe->cfg[MTK_RAW_META_SV_OUT_0].mbus_fmt.width =
-				result.exp_hsize;
-			pipe->cfg[MTK_RAW_META_SV_OUT_0].mbus_fmt.height =
-				result.exp_vsize;
-			dev_info(raw->cam_dev, "[%s:meta0] hsize/vsize:%d/%d\n",
-				__func__, result.exp_hsize, result.exp_vsize);
-		}
-	}
 
 	return 0;
 }
@@ -4130,10 +4008,11 @@ mtk_raw_s_frame_interval(struct v4l2_subdev *sd,
 	struct mtk_raw *raw = pipe->raw;
 
 	if (v4l2_frame_interval_which(interval) == V4L2_SUBDEV_FORMAT_TRY) {
-		dev_dbg(raw->cam_dev, "%s:pipe(%d):try res: fps = %d/%d, not used\n",
+		dev_dbg(raw->cam_dev, "%s:pipe(%d):try res: fps = %d/%d",
 			__func__, pipe->id,
 			interval->interval.numerator,
 			interval->interval.denominator);
+		pipe->try_res_config.interval = interval->interval;
 	} else {
 		dev_dbg(raw->cam_dev, "%s:pipe(%d):current res: fps = %d/%d",
 			__func__, pipe->id,
@@ -4662,34 +4541,6 @@ static const struct mtk_cam_format_desc stream_out_fmts[] = {
 			.width = IMG_MAX_WIDTH,
 			.height = IMG_MAX_HEIGHT,
 			.pixelformat = V4L2_PIX_FMT_MTISP_BAYER14_UFBC,
-		},
-	},
-	{
-		.vfmt.fmt.pix_mp = {
-			.width = IMG_MAX_WIDTH,
-			.height = IMG_MAX_HEIGHT,
-			.pixelformat = V4L2_PIX_FMT_YUYV,
-		},
-	},
-	{
-		.vfmt.fmt.pix_mp = {
-			.width = IMG_MAX_WIDTH,
-			.height = IMG_MAX_HEIGHT,
-			.pixelformat = V4L2_PIX_FMT_YVYU,
-		},
-	},
-	{
-		.vfmt.fmt.pix_mp = {
-			.width = IMG_MAX_WIDTH,
-			.height = IMG_MAX_HEIGHT,
-			.pixelformat = V4L2_PIX_FMT_UYVY,
-		},
-	},
-	{
-		.vfmt.fmt.pix_mp = {
-			.width = IMG_MAX_WIDTH,
-			.height = IMG_MAX_HEIGHT,
-			.pixelformat = V4L2_PIX_FMT_VYUY,
 		},
 	},
 };
@@ -5626,7 +5477,6 @@ mtk_cam_dev_node_desc capture_queues[] = {
 		.link_flags = MEDIA_LNK_FL_ENABLED |  MEDIA_LNK_FL_IMMUTABLE,
 		.image = false,
 		.smem_alloc = false,
-		.need_cache_sync_on_finish = true,
 		.dma_port = MTKCAM_IPI_RAW_META_STATS_0,
 		.default_fmt_idx = 1,
 		.max_buf_count = 16,
@@ -5669,7 +5519,8 @@ mtk_cam_dev_node_desc capture_queues[] = {
 		.image = false,
 		.smem_alloc = false,
 		.dma_port = MTKCAM_IPI_CAMSV_MAIN_OUT,
-		.default_fmt_idx = 4,
+		.fmts = stream_out_fmts,
+		.default_fmt_idx = 0,
 		.max_buf_count = 16,
 		.ioctl_ops = &mtk_cam_v4l2_meta_cap_ioctl_ops,
 	},
@@ -5682,7 +5533,8 @@ mtk_cam_dev_node_desc capture_queues[] = {
 		.image = false,
 		.smem_alloc = false,
 		.dma_port = MTKCAM_IPI_CAMSV_MAIN_OUT,
-		.default_fmt_idx = 4,
+		.fmts = stream_out_fmts,
+		.default_fmt_idx = 0,
 		.max_buf_count = 16,
 		.ioctl_ops = &mtk_cam_v4l2_meta_cap_ioctl_ops,
 	},
@@ -5695,7 +5547,8 @@ mtk_cam_dev_node_desc capture_queues[] = {
 		.image = false,
 		.smem_alloc = false,
 		.dma_port = MTKCAM_IPI_CAMSV_MAIN_OUT,
-		.default_fmt_idx = 4,
+		.fmts = stream_out_fmts,
+		.default_fmt_idx = 0,
 		.max_buf_count = 16,
 		.ioctl_ops = &mtk_cam_v4l2_meta_cap_ioctl_ops,
 	},
@@ -5763,7 +5616,7 @@ static void mtk_raw_pipeline_queue_setup(struct mtk_raw_pipeline *pipe)
 	for (i = 0; i < MTK_RAW_TOTAL_CAPTURE_QUEUES; i++) {
 		pipe->vdev_nodes[node_idx].desc = capture_queues[i];
 		if (pipe->vdev_nodes[node_idx].desc.id >= MTK_RAW_META_OUT_BEGIN &&
-			pipe->vdev_nodes[node_idx].desc.id <= MTK_RAW_META_SV_OUT_2)
+			pipe->vdev_nodes[node_idx].desc.id <= MTK_RAW_META_OUT_2)
 			pipe->vdev_nodes[node_idx].desc.fmts = mtk_cam_get_meta_fmts();
 		pipe->vdev_nodes[node_idx++].desc.name =
 			capture_queue_names[pipe->id][i];
@@ -5784,6 +5637,7 @@ static void mtk_raw_pipeline_ctrl_setup(struct mtk_raw_pipeline *pipe)
 		return;
 	}
 	mutex_init(&pipe->res_config.resource_lock);
+	mutex_init(&pipe->try_res_config.resource_lock);
 	ctrl = v4l2_ctrl_new_custom(ctrl_hdlr, &hwn_limit, NULL);
 	if (ctrl)
 		ctrl->flags |= V4L2_CTRL_FLAG_VOLATILE |
@@ -5817,6 +5671,10 @@ static void mtk_raw_pipeline_ctrl_setup(struct mtk_raw_pipeline *pipe)
 	ctrl = v4l2_ctrl_new_custom(ctrl_hdlr, &bin_try, NULL);
 	if (ctrl)
 		ctrl->flags |= V4L2_CTRL_FLAG_VOLATILE;
+	v4l2_ctrl_new_custom(ctrl_hdlr, &res_plan_policy, NULL);
+	ctrl = v4l2_ctrl_new_custom(ctrl_hdlr, &res_pixel_rate, NULL);
+	if (ctrl)
+		ctrl->flags |= V4L2_CTRL_FLAG_VOLATILE;
 	ctrl = v4l2_ctrl_new_custom(ctrl_hdlr, &frame_sync_id, NULL);
 	if (ctrl)
 		ctrl->flags |= V4L2_CTRL_FLAG_VOLATILE |
@@ -5825,6 +5683,11 @@ static void mtk_raw_pipeline_ctrl_setup(struct mtk_raw_pipeline *pipe)
 	if (ctrl)
 		ctrl->flags |= V4L2_CTRL_FLAG_VOLATILE |
 			       V4L2_CTRL_FLAG_EXECUTE_ON_WRITE;
+
+	v4l2_ctrl_new_std(ctrl_hdlr, &cam_ctrl_ops,
+				    V4L2_CID_HBLANK, 0, 65535, 1, 0);
+	v4l2_ctrl_new_std(ctrl_hdlr, &cam_ctrl_ops,
+				    V4L2_CID_VBLANK, 0, 65535, 1, 0);
 
 	// PDE
 	ctrl = v4l2_ctrl_new_custom(ctrl_hdlr, &cfg_pde_info, NULL);
@@ -5858,7 +5721,7 @@ static void mtk_raw_pipeline_ctrl_setup(struct mtk_raw_pipeline *pipe)
 	pipe->res_config.hwn_limit_max = hwn_limit.def;
 	pipe->res_config.frz_limit = frz_limit.def;
 	pipe->res_config.bin_limit = bin_limit.def;
-	pipe->res_config.res_plan = 1;
+	pipe->res_config.res_plan = res_plan_policy.def;
 	pipe->feature_pending = mtk_feature.def;
 	pipe->sync_id = frame_sync_id.def;
 	pipe->sensor_mode_update = cfg_res_update.def;
@@ -5867,7 +5730,6 @@ static void mtk_raw_pipeline_ctrl_setup(struct mtk_raw_pipeline *pipe)
 	pipe->pde_config.pde_info.pd_table_offset = cfg_pde_info.def;
 	pipe->subdev.ctrl_handler = ctrl_hdlr;
 	pipe->hw_mode = mtk_camsys_hw_mode.def;
-	pipe->hw_mode_pending = mtk_camsys_hw_mode.def;
 }
 
 static int mtk_raw_pipeline_register(unsigned int id, struct device *dev,
@@ -5881,7 +5743,7 @@ static int mtk_raw_pipeline_register(unsigned int id, struct device *dev,
 	int ret;
 
 	pipe->id = id;
-	pipe->dynamic_exposure_num_max = 3;
+	pipe->dynamic_exposure_num_max = 1;
 
 	/* Initialize subdev */
 	v4l2_subdev_init(sd, &mtk_raw_subdev_ops);
@@ -6089,7 +5951,6 @@ static int mtk_raw_probe(struct platform_device *pdev)
 
 	raw_dev->fifo_size =
 		roundup_pow_of_two(8 * sizeof(struct mtk_camsys_irq_info));
-
 	raw_dev->msg_buffer = devm_kzalloc(dev, raw_dev->fifo_size, GFP_KERNEL);
 	if (!raw_dev->msg_buffer)
 		return -ENOMEM;
@@ -6421,7 +6282,6 @@ static int mtk_yuv_of_probe(struct platform_device *pdev,
 					pdev->dev.of_node, "mediatek,larbs", NULL);
 	dev_info(dev, "larb_num:%d\n", larbs);
 
-	drvdata->larb_pdev = NULL;
 	for (i = 0; i < larbs; i++) {
 		larb_node = of_parse_phandle(
 					pdev->dev.of_node, "mediatek,larbs", i);
@@ -6442,8 +6302,6 @@ static int mtk_yuv_of_probe(struct platform_device *pdev,
 						DL_FLAG_PM_RUNTIME | DL_FLAG_STATELESS);
 		if (!link)
 			dev_info(dev, "unable to link smi larb%d\n", i);
-		else
-			drvdata->larb_pdev = larb_pdev;
 	}
 
 #ifdef CONFIG_PM_SLEEP
@@ -6563,12 +6421,6 @@ int mtk_cam_translation_fault_callback(int port, dma_addr_t mva, void *data)
 		dequeued_frame_seq_no_inner = 1;
 
 	ctx = mtk_cam_find_ctx(raw_dev->cam, &raw_dev->pipeline->subdev.entity);
-
-	if (!ctx) {
-		dev_info(dev, "%s: cannot find any ctx, and skip TF dump\n", __func__);
-		return -1;
-	}
-
 	s_data = mtk_cam_get_req_s_data(ctx, ctx->stream_id, dequeued_frame_seq_no_inner);
 
 	dev_info(dev, "=================== [CAMSYS M4U] Dump Begin ==================\n");

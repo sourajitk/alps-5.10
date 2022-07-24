@@ -22,7 +22,6 @@ static struct drm_crtc *dev_crtc;
 static struct regulator *mm_freq_request;
 static u32 *g_freq_steps;
 static int g_freq_level[CRTC_NUM] = {-1, -1, -1};
-static long g_freq;
 static int step_size = 1;
 
 void mtk_disp_pmqos_get_icc_path_name(char *buf, int buf_len,
@@ -399,51 +398,44 @@ void mtk_drm_set_mmclk(struct drm_crtc *crtc, int level,
 void mtk_drm_set_mmclk_by_pixclk(struct drm_crtc *crtc,
 	unsigned int pixclk, const char *caller)
 {
-	int i;
+	int i, ret = 0;
+	unsigned int idx = drm_crtc_index(crtc);
 	unsigned long freq = pixclk * 1000000;
+	unsigned int fps_dst = drm_mode_vrefresh(&crtc->state->mode);
+	static bool mmclk_status;
 
-	g_freq = freq;
-
+	DRM_MMP_EVENT_START(mmclk, idx, fps_dst);
+	if (mmclk_status == true) {
+		DRM_MMP_MARK(mmclk, idx, fps_dst);
+		DDPINFO("%s: double set mmclk\n", __func__);
+	}
+	mmclk_status = true;
 	if (freq > g_freq_steps[step_size - 1]) {
 		DDPMSG("%s:error:pixleclk (%d) is to big for mmclk (%llu)\n",
 			caller, freq, g_freq_steps[step_size - 1]);
 		mtk_drm_set_mmclk(crtc, step_size - 1, caller);
-		return;
+		ret = step_size - 1;
+		goto end;
 	}
 	if (!freq) {
 		mtk_drm_set_mmclk(crtc, -1, caller);
-		return;
+		ret = -1;
+		goto end;
 	}
 	for (i = step_size - 2 ; i >= 0; i--) {
 		if (freq > g_freq_steps[i]) {
 			mtk_drm_set_mmclk(crtc, i + 1, caller);
+			ret = i + 1;
 			break;
 		}
-		if (i == 0)
+		if (i == 0) {
 			mtk_drm_set_mmclk(crtc, 0, caller);
+			ret = 0;
+		}
 	}
-}
 
-unsigned long mtk_drm_get_freq(struct drm_crtc *crtc, const char *caller)
-{
-	return g_freq;
-}
-
-unsigned long mtk_drm_get_mmclk(struct drm_crtc *crtc, const char *caller)
-{
-	int idx;
-	unsigned long freq;
-
-	idx = drm_crtc_index(crtc);
-
-	if (g_freq_level[idx] >= 0)
-		freq = g_freq_steps[g_freq_level[idx]];
-	else
-		freq = g_freq_steps[0];
-
-	DDPINFO("%s[%d]g_freq_level[idx=%d]: %d (freq=%d)\n",
-		__func__, __LINE__, idx, g_freq_level[idx], freq);
-
-	return freq;
+end:
+	mmclk_status = false;
+	DRM_MMP_EVENT_END(mmclk, pixclk, ret);
 }
 

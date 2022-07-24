@@ -23,3 +23,5 @@ obj-$(CONFIG_MTK_THERMAL_INTERFACE)	+= thermal_interface.o
 obj-$(CONFIG_MTK_THERMAL_JATM)	+= thermal_jatm.o
 
 obj-$(CONFIG_MTK_BOARD_THERMAL)	+= board_temp.o
+
+obj-$(CONFIG_MTK_REALME_THERMAL)	+= realme_temp.o

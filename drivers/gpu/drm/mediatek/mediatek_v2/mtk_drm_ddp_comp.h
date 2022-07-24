@@ -25,57 +25,6 @@ struct drm_crtc_state;
 
 #define ALIGN_TO(x, n)  (((x) + ((n) - 1)) & ~((n) - 1))
 
-#define MMSYS_MISC                                0xF0
-#define MMSYS_SODI_REQ_MASK                       0xF4
-#define MMSYS_EMI_REQ_CTL                         0xF8
-
-#define MMSYS_DUMMY0 0x0400
-#define DISP_REG_CONFIG_MMSYS_MISC                0x0F0
-
-#define SODI_HRT_FIFO_SEL                         REG_FLD_MSB_LSB(3, 0)
-	#define SODI_HRT_FIFO_SEL_DISP0_PD_MODE       REG_FLD_MSB_LSB(0, 0)
-	#define SODI_HRT_FIFO_SEL_DISP0_CG_MODE       REG_FLD_MSB_LSB(1, 1)
-	#define SODI_HRT_FIFO_SEL_DISP1_PD_MODE       REG_FLD_MSB_LSB(2, 2)
-	#define SODI_HRT_FIFO_SEL_DISP1_CG_MODE       REG_FLD_MSB_LSB(3, 3)
-
-#define SODI_REQ_SEL_APSRC				          REG_FLD_MSB_LSB(0, 0)
-#define SODI_REQ_SEL_DDREN				          REG_FLD_MSB_LSB(1, 1)
-
-#define SODI_REQ_SEL_ALL                          REG_FLD_MSB_LSB(11, 8)
-	#define SODI_REQ_SEL_RDMA0_PD_MODE            REG_FLD_MSB_LSB(8, 8)
-	#define SODI_REQ_SEL_RDMA0_CG_MODE            REG_FLD_MSB_LSB(9, 9)
-	#define SODI_REQ_SEL_RDMA1_PD_MODE            REG_FLD_MSB_LSB(10, 10)
-	#define SODI_REQ_SEL_RDMA1_CG_MODE            REG_FLD_MSB_LSB(11, 11)
-
-#define SODI_REQ_VAL_ALL                          REG_FLD_MSB_LSB(15, 12)
-	#define SODI_REQ_VAL_RDMA0_PD_MODE            REG_FLD_MSB_LSB(12, 12)
-	#define SODI_REQ_VAL_RDMA0_CG_MODE            REG_FLD_MSB_LSB(13, 13)
-	#define SODI_REQ_VAL_RDMA1_PD_MODE            REG_FLD_MSB_LSB(14, 14)
-	#define SODI_REQ_VAL_RDMA1_CG_MODE            REG_FLD_MSB_LSB(15, 15)
-
-#define HRT_URGENT_CTL_SEL_ALL                    REG_FLD_MSB_LSB(7, 0)
-	#define HRT_URGENT_CTL_SEL_RDMA0              REG_FLD_MSB_LSB(0, 0)
-	#define HRT_URGENT_CTL_SEL_WDMA0              REG_FLD_MSB_LSB(1, 1)
-	#define HRT_URGENT_CTL_SEL_RDMA1              REG_FLD_MSB_LSB(2, 2)
-	#define HRT_URGENT_CTL_SEL_WDMA1              REG_FLD_MSB_LSB(3, 3)
-	#define HRT_URGENT_CTL_SEL_RDMA4              REG_FLD_MSB_LSB(4, 4)
-	#define HRT_URGENT_CTL_SEL_RDMA5              REG_FLD_MSB_LSB(5, 5)
-	#define HRT_URGENT_CTL_SEL_MDP_RDMA4          REG_FLD_MSB_LSB(6, 6)
-
-#define HRT_URGENT_CTL_VAL_ALL                    REG_FLD_MSB_LSB(16, 9)
-	#define HRT_URGENT_CTL_VAL_RDMA0              REG_FLD_MSB_LSB(9, 9)
-	#define HRT_URGENT_CTL_VAL_WDMA0              REG_FLD_MSB_LSB(10, 10)
-	#define HRT_URGENT_CTL_VAL_RDMA4              REG_FLD_MSB_LSB(13, 13)
-	#define HRT_URGENT_CTL_VAL_MDP_RDMA4          REG_FLD_MSB_LSB(15, 15)
-
-#define DVFS_HALT_MASK_SEL_ALL                    REG_FLD_MSB_LSB(23, 18)
-	#define DVFS_HALT_MASK_SEL_RDMA0              REG_FLD_MSB_LSB(18, 18)
-	#define DVFS_HALT_MASK_SEL_RDMA1              REG_FLD_MSB_LSB(19, 19)
-	#define DVFS_HALT_MASK_SEL_RDMA4              REG_FLD_MSB_LSB(20, 20)
-	#define DVFS_HALT_MASK_SEL_RDMA5              REG_FLD_MSB_LSB(21, 21)
-	#define DVFS_HALT_MASK_SEL_WDMA0              REG_FLD_MSB_LSB(22, 22)
-	#define DVFS_HALT_MASK_SEL_WDMA1              REG_FLD_MSB_LSB(23, 23)
-
 enum mtk_ddp_comp_type {
 	MTK_DISP_OVL,
 	MTK_DISP_RDMA,
@@ -255,41 +204,39 @@ enum mtk_ddp_comp_type {
 /*125*/	EXPR(DDP_COMPONENT_PQ0_RDMA0_POS_VIRTUAL)                           \
 	EXPR(DDP_COMPONENT_MAIN_OVL_DISP_PQ0_VIRTUAL)                       \
 	EXPR(DDP_COMPONENT_Y2R0)                                            \
-	EXPR(DDP_COMPONENT_Y2R1)                                            \
 	EXPR(DDP_COMPONENT_Y2R0_VIRTUAL0)                                   \
-/*130*/	EXPR(DDP_COMPONENT_Y2R1_VIRTUAL0)                                   \
 	EXPR(DDP_COMPONENT_DLO_ASYNC)                                       \
-	EXPR(DDP_COMPONENT_DLI_ASYNC)                                       \
+/*130*/	EXPR(DDP_COMPONENT_DLI_ASYNC)                                       \
 	EXPR(DDP_COMPONENT_INLINE_ROTATE0)                                  \
 	EXPR(DDP_COMPONENT_INLINE_ROTATE1)                                  \
-/*135*/	EXPR(DDP_COMPONENT_MMLSYS_BYPASS)                                   \
+	EXPR(DDP_COMPONENT_MMLSYS_BYPASS)                                   \
 	EXPR(DDP_COMPONENT_MAIN_OVL_DISP_WDMA_VIRTUAL)                     \
-	EXPR(DDP_COMPONENT_MAIN_OVL_DISP1_WDMA_VIRTUAL)                     \
+/*135*/	EXPR(DDP_COMPONENT_MAIN_OVL_DISP1_WDMA_VIRTUAL)                     \
 	EXPR(DDP_COMPONENT_SUB_OVL_DISP0_PQ0_VIRTUAL)                  \
 	EXPR(DDP_COMPONENT_SUB_OVL_DISP1_PQ0_VIRTUAL)					\
-/*140*/	EXPR(DDP_COMPONENT_MML_RSZ0)					\
+	EXPR(DDP_COMPONENT_MML_RSZ0)					\
 	EXPR(DDP_COMPONENT_MML_RSZ1)					\
-	EXPR(DDP_COMPONENT_MML_RSZ2)					\
+/*140*/	EXPR(DDP_COMPONENT_MML_RSZ2)					\
 	EXPR(DDP_COMPONENT_MML_RSZ3)					\
 	EXPR(DDP_COMPONENT_MML_HDR0)					\
-/*145*/	EXPR(DDP_COMPONENT_MML_HDR1)					\
+	EXPR(DDP_COMPONENT_MML_HDR1)					\
 	EXPR(DDP_COMPONENT_MML_AAL0)					\
-	EXPR(DDP_COMPONENT_MML_AAL1)					\
+/*145*/	EXPR(DDP_COMPONENT_MML_AAL1)					\
 	EXPR(DDP_COMPONENT_MML_TDSHP0)					\
 	EXPR(DDP_COMPONENT_MML_TDSHP1)					\
-/*150*/	EXPR(DDP_COMPONENT_MML_COLOR0)					\
+	EXPR(DDP_COMPONENT_MML_COLOR0)					\
 	EXPR(DDP_COMPONENT_MML_COLOR1)					\
-	EXPR(DDP_COMPONENT_MML_MML0)					\
+/*150*/	EXPR(DDP_COMPONENT_MML_MML0)					\
 	EXPR(DDP_COMPONENT_MML_DLI0)					\
 	EXPR(DDP_COMPONENT_MML_DLI1)					\
-/*155*/	EXPR(DDP_COMPONENT_MML_DLO0)					\
+	EXPR(DDP_COMPONENT_MML_DLO0)					\
 	EXPR(DDP_COMPONENT_MML_DLO1)					\
-	EXPR(DDP_COMPONENT_MML_MUTEX0)					\
+/*155*/	EXPR(DDP_COMPONENT_MML_MUTEX0)					\
 	EXPR(DDP_COMPONENT_MML_WROT0)					\
 	EXPR(DDP_COMPONENT_MML_WROT1)					\
-/*160*/	EXPR(DDP_COMPONENT_MML_WROT2)					\
+	EXPR(DDP_COMPONENT_MML_WROT2)					\
 	EXPR(DDP_COMPONENT_MML_WROT3)					\
-	EXPR(DDP_COMPONENT_ID_MAX)
+/*160*/	EXPR(DDP_COMPONENT_ID_MAX)
 
 #define DECLARE_NUM(ENUM) ENUM,
 #define DECLARE_STR(STR) #STR,
@@ -320,7 +267,6 @@ enum mtk_ddp_comp_id {
 	DDP_COMPONENT_OVL1_2L,
 	DDP_COMPONENT_OVL0_2L_VIRTUAL0,
 	DDP_COMPONENT_OVL0_VIRTUAL0,
-	DDP_COMPONENT_OVL1_VIRTUAL0,
 	DDP_COMPONENT_PWM0,
 	DDP_COMPONENT_PWM1,
 	DDP_COMPONENT_PWM2,
@@ -334,9 +280,7 @@ enum mtk_ddp_comp_id {
 	DDP_COMPONENT_WDMA1,
 	DDP_COMPONENT_POSTMASK0,
 	DDP_COMPONENT_Y2R0,
-	DDP_COMPONENT_Y2R1,
 	DDP_COMPONENT_Y2R0_VIRTUAL0,
-	DDP_COMPONENT_Y2R1_VIRTUAL0,
 	DDP_COMPONENT_DLO_ASYNC,
 	DDP_COMPONENT_DLI_ASYNC,
 	DDP_COMPONENT_INLINE_ROTATE0,
@@ -430,7 +374,22 @@ enum mtk_ddp_io_cmd {
 	DSI_DISABLE_VFP_EALRY_STOP,
 	/*Msync 2.0 cmd end*/
 	DUAL_TE_INIT,
-	DSI_GET_CMD_MODE_LINE_TIME,
+//#ifdef OPLUS_ADFR
+	PANEL_FAKE_FRAME,
+	GET_EXT_PARAMS_BY_MODE,
+	SET_AUTO_MODE,
+	SET_MINFPS,
+	/* add for mux switch control */
+	LCM_VSYNC_SWITCH,
+//#endif
+//#ifdef OPLUS_FEATURE_ONSCREENFINGERPRINT
+	DSI_READ,
+	LCM_HBM,
+	LCM_CABC,
+	LCM_SEED,
+	PANEL_SN_SET,
+	DC_POST_ENTER,
+	//#endif
 };
 
 struct golden_setting_context {
@@ -502,15 +461,10 @@ struct mtk_ddp_comp_funcs {
 	void (*connect)(struct mtk_ddp_comp *comp, enum mtk_ddp_comp_id prev,
 			enum mtk_ddp_comp_id next);
 	int (*is_busy)(struct mtk_ddp_comp *comp);
-	void (*mml_calc_cfg)(struct mtk_ddp_comp *comp,
-			     union mtk_addon_config *addon_config,
-			     struct cmdq_pkt *handle);
-	void (*dump)(struct mtk_ddp_comp *comp);
 };
 
 #define MTK_IRQ_TS_MAX 20
 #define MTK_IRQ_WORK_MAX 3
-#define MTK_IRQ_TS_THRESHOLD 500000ULL
 
 struct mtk_irq_ts {
 	unsigned long long ts;
@@ -542,8 +496,7 @@ struct mtk_irq_ts {
 	{ \
 		if (find_work == true && i > 0 && \
 			(ddp_comp.ts_works[work_id].irq_time[i - 1].ts \
-				- ddp_comp.ts_works[work_id].irq_time[0].ts \
-				>= MTK_IRQ_TS_THRESHOLD)) { \
+				- ddp_comp.ts_works[work_id].irq_time[0].ts >= 500000ULL)) { \
 			if (i < MTK_IRQ_TS_MAX) { \
 				ddp_comp.ts_works[work_id].irq_time[i].ts = 0;	\
 				ddp_comp.ts_works[work_id].irq_time[i].line = 0; \
@@ -721,23 +674,6 @@ mtk_ddp_comp_addon_config(struct mtk_ddp_comp *comp, enum mtk_ddp_comp_id prev,
 				handle);
 }
 
-static inline void
-mtk_ddp_comp_mml_calc_cfg(struct mtk_ddp_comp *comp,
-			  union mtk_addon_config *addon_config,
-			  struct cmdq_pkt *handle)
-{
-	if (comp && comp->funcs && comp->funcs->addon_config &&
-		!comp->blank_mode)
-		comp->funcs->mml_calc_cfg(comp, addon_config, handle);
-}
-
-static inline void
-mtk_ddp_comp_dump(struct mtk_ddp_comp *comp)
-{
-	if (comp && comp->funcs && comp->funcs->dump && !comp->blank_mode)
-		comp->funcs->dump(comp);
-}
-
 static inline int mtk_ddp_comp_io_cmd(struct mtk_ddp_comp *comp,
 				      struct cmdq_pkt *handle,
 				      enum mtk_ddp_io_cmd io_cmd, void *params)
@@ -787,12 +723,21 @@ bool mtk_dsi_is_cmd_mode(struct mtk_ddp_comp *comp);
 bool mtk_ddp_comp_is_output(struct mtk_ddp_comp *comp);
 void mtk_ddp_comp_get_name(struct mtk_ddp_comp *comp, char *buf, int buf_len);
 int mtk_ovl_layer_num(struct mtk_ddp_comp *comp);
+#if defined(CONFIG_PXLW_IRIS)
+int mtk_ddp_write(struct mtk_ddp_comp *comp, unsigned int value,
+		   unsigned int offset, void *handle);
+int mtk_ddp_write_relaxed(struct mtk_ddp_comp *comp, unsigned int value,
+			   unsigned int offset, void *handle);
+int mtk_ddp_write_mask(struct mtk_ddp_comp *comp, unsigned int value,
+			unsigned int offset, unsigned int mask, void *handle);
+#else
 void mtk_ddp_write(struct mtk_ddp_comp *comp, unsigned int value,
 		   unsigned int offset, void *handle);
 void mtk_ddp_write_relaxed(struct mtk_ddp_comp *comp, unsigned int value,
 			   unsigned int offset, void *handle);
 void mtk_ddp_write_mask(struct mtk_ddp_comp *comp, unsigned int value,
 			unsigned int offset, unsigned int mask, void *handle);
+#endif
 void mtk_ddp_write_mask_cpu(struct mtk_ddp_comp *comp,
 			unsigned int value, unsigned int offset,
 			unsigned int mask);

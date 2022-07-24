@@ -11,8 +11,14 @@
 #include <linux/dma-mapping.h>
 #include <linux/dmapool.h>
 #include <linux/sched/clock.h>
+
+/*#ifdef OPLUS_BUG_STABILITY*/
+#include <soc/oplus/system/oplus_mm_kevent_fb.h>
+/*#endif*/
+
 #include <linux/timer.h>
 #include <linux/delay.h>
+
 
 #include <iommu_debug.h>
 
@@ -104,8 +110,6 @@ struct cmdq_sec_helper_fp *cmdq_sec_helper;
 #define	MDP_VCP_BUF_SIZE 0x80000
 
 #define	VCP_OFF_DELAY 1000 /* 1000ms */
-
-struct workqueue_struct *cmdq_pkt_destroy_wq;
 
 struct vcp_control {
 	struct mutex vcp_mutex;
@@ -874,29 +878,10 @@ struct cmdq_pkt *cmdq_pkt_create(struct cmdq_client *client)
 }
 EXPORT_SYMBOL(cmdq_pkt_create);
 
-static void cmdq_pkt_destroy_work(struct work_struct *work_item)
-{
-	struct cmdq_pkt *pkt =
-		container_of(work_item, struct cmdq_pkt, destroy_work);
-
-	cmdq_log("%s pkt:%p ", __func__, pkt);
-	cmdq_pkt_free_buf(pkt);
-	kfree(pkt->flush_item);
-#if IS_ENABLED(CONFIG_MTK_CMDQ_MBOX_EXT)
-#ifdef CMDQ_SECURE_SUPPORT
-	if (pkt->sec_data)
-		cmdq_sec_helper->sec_pkt_free_data_fp(pkt);
-#endif
-#endif
-	kfree(pkt);
-}
-
 void cmdq_pkt_destroy(struct cmdq_pkt *pkt)
 {
 	struct cmdq_client *client = pkt->cl;
-	u64 start = sched_clock(), diff;
 
-	cmdq_log("%s pkt:%p ", __func__, pkt);
 	if (client)
 		mutex_lock(&client->chan_mutex);
 #if IS_ENABLED(CONFIG_MTK_CMDQ_MBOX_EXT)
@@ -910,17 +895,18 @@ void cmdq_pkt_destroy(struct cmdq_pkt *pkt)
 		dump_stack();
 	}
 #endif
+	pkt->task_alive = false;
+	cmdq_pkt_free_buf(pkt);
+	kfree(pkt->flush_item);
+#if IS_ENABLED(CONFIG_MTK_CMDQ_MBOX_EXT)
+#ifdef CMDQ_SECURE_SUPPORT
+	if (pkt->sec_data)
+		cmdq_sec_helper->sec_pkt_free_data_fp(pkt);
+#endif
+#endif
+	kfree(pkt);
 	if (client)
 		mutex_unlock(&client->chan_mutex);
-
-	pkt->task_alive = false;
-
-	INIT_WORK(&pkt->destroy_work, cmdq_pkt_destroy_work);
-	queue_work(cmdq_pkt_destroy_wq, &pkt->destroy_work);
-
-	diff = sched_clock() - start;
-	if (diff >= 4000000) /* 4 ms*/
-		cmdq_msg("%s cost time %llu ms ", __func__, div_u64(diff, 1000000));
 }
 EXPORT_SYMBOL(cmdq_pkt_destroy);
 
@@ -1281,9 +1267,6 @@ void cmdq_pkt_reuse_buf_va(struct cmdq_pkt *pkt, struct cmdq_reuse *reuse,
 
 	for (i = 0; i < count; i++) {
 		switch (reuse[i].op) {
-		case 0:
-			/* for case client update itself, skip it */
-			break;
 		case CMDQ_CODE_READ:
 		case CMDQ_CODE_MOVE:
 		case CMDQ_CODE_WRITE:
@@ -2164,6 +2147,9 @@ s32 cmdq_pkt_refinalize(struct cmdq_pkt *pkt)
 	if (!cmdq_pkt_is_finalized(pkt))
 		return 0;
 
+	if (!cmdq_pkt_is_finalized(pkt))
+		return 0;
+
 	buf = list_last_entry(&pkt->buf, typeof(*buf), list_entry);
 	inst = buf->va_base + CMDQ_CMD_BUFFER_SIZE - pkt->avail_buf_size - CMDQ_INST_SIZE;
 	if (inst->op != CMDQ_CODE_JUMP || inst->arg_a != 1)
@@ -2405,6 +2391,11 @@ void cmdq_pkt_err_dump_cb(struct cmdq_cb_data data)
 		cmdq_util_helper->error_enable();
 
 	cmdq_util_user_err(client->chan, "Begin of Error %u", err_num);
+	/*#ifdef OPLUS_BUG_STABILITY*/
+	if (err_num < 5) {
+		mm_fb_display_kevent("DisplayDriverID@@508$$", MM_FB_KEY_RATELIMIT_1H, "cmdq timeout Begin of Error %u", err_num);
+	}
+	/*#endif*/
 
 	cmdq_dump_core(client->chan);
 
@@ -2517,7 +2508,6 @@ s32 cmdq_pkt_flush_async(struct cmdq_pkt *pkt,
 #endif
 	struct cmdq_client *client = pkt->cl;
 	s32 err;
-	u64 start = sched_clock(), diff;
 
 #if IS_ENABLED(CONFIG_MTK_CMDQ_MBOX_EXT)
 	if (IS_ERR(item))
@@ -2558,10 +2548,6 @@ s32 cmdq_pkt_flush_async(struct cmdq_pkt *pkt,
 	/* We can send next packet immediately, so just call txdone. */
 	mbox_client_txdone(client->chan, 0);
 	mutex_unlock(&client->chan_mutex);
-
-	diff = sched_clock() - start;
-	if (diff >= 4000000) /* 4 ms*/
-		cmdq_msg("%s cost time %llu ms ", __func__, div_u64(diff, 1000000));
 
 	return err;
 }
@@ -2716,7 +2702,6 @@ s32 cmdq_pkt_flush_threaded(struct cmdq_pkt *pkt,
 {
 	struct cmdq_flush_item *item_q = kzalloc(sizeof(*item_q), GFP_KERNEL);
 	s32 err;
-	u64 start = sched_clock(), diff;
 
 	if (!item_q)
 		return -ENOMEM;
@@ -2738,10 +2723,6 @@ s32 cmdq_pkt_flush_threaded(struct cmdq_pkt *pkt,
 	INIT_WORK(&item_q->work, cmdq_pkt_flush_q_cb_work);
 	err = cmdq_pkt_flush_async(pkt, cmdq_pkt_flush_q_cb, item_q);
 #endif
-
-	diff = sched_clock() - start;
-	if (diff >= 4000000) /* 4 ms*/
-		cmdq_msg("%s cost time %llu ms ", __func__, div_u64(diff, 1000000));
 	return err;
 }
 EXPORT_SYMBOL(cmdq_pkt_flush_threaded);
@@ -3304,10 +3285,6 @@ int cmdq_helper_init(void)
 	INIT_WORK(&vcp.vcp_work, cmdq_vcp_off_work);
 	vcp.vcp_wq = create_singlethread_workqueue(
 		"cmdq_vcp_power_handler");
-
-	cmdq_pkt_destroy_wq = create_singlethread_workqueue(
-		"cmdq_pkt_destroy_wq");
-
 	return 0;
 }
 EXPORT_SYMBOL(cmdq_helper_init);

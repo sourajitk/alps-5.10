@@ -74,16 +74,18 @@ void init_drm_mmp_event(void)
 		mmprofile_register_event(g_DRM_MMP_Events.aal, "AAL0");
 	g_DRM_MMP_Events.aal1 =
 		mmprofile_register_event(g_DRM_MMP_Events.aal, "AAL1");
+	g_DRM_MMP_Events.mmclk =
+		mmprofile_register_event(g_DRM_MMP_Events.drm, "MMCLK");
 	g_DRM_MMP_Events.pmqos =
 		mmprofile_register_event(g_DRM_MMP_Events.drm, "PMQOS");
 	g_DRM_MMP_Events.hrt_bw =
 		mmprofile_register_event(g_DRM_MMP_Events.drm, "HRT_BW");
-	g_DRM_MMP_Events.mutex_lock =
-		mmprofile_register_event(g_DRM_MMP_Events.drm, "LOCK");
 	g_DRM_MMP_Events.layering =
 		mmprofile_register_event(g_DRM_MMP_Events.drm, "HRT");
 	g_DRM_MMP_Events.layering_blob =
 		mmprofile_register_event(g_DRM_MMP_Events.drm, "HRT_BLOB");
+	g_DRM_MMP_Events.mutex_lock =
+		mmprofile_register_event(g_DRM_MMP_Events.drm, "LOCK");
 	g_DRM_MMP_Events.dma_alloc =
 		mmprofile_register_event(g_DRM_MMP_Events.drm, "D_ALLOC");
 	g_DRM_MMP_Events.dma_free =
@@ -104,10 +106,6 @@ void init_drm_mmp_event(void)
 		mmprofile_register_event(g_DRM_MMP_Events.drm, "TOP_CLK");
 	g_DRM_MMP_Events.ddp =
 		mmprofile_register_event(g_DRM_MMP_Events.IRQ, "MUTEX");
-	g_DRM_MMP_Events.sram_alloc =
-		mmprofile_register_event(g_DRM_MMP_Events.drm, "S_ALLOC");
-	g_DRM_MMP_Events.sram_free =
-		mmprofile_register_event(g_DRM_MMP_Events.drm, "S_FREE");
 	for (i = 0; i < DISP_MUTEX_DDP_COUNT; i++) {
 		char name[32];
 
@@ -289,11 +287,8 @@ void init_crtc_mmp_event(void)
 			crtc_mmp_root, "aal_dre30_rw");
 		g_CRTC_MMP_Events[i].aal_dre20_rh = mmprofile_register_event(
 			crtc_mmp_root, "aal_dre20_rh");
-		/*Gamma MMP MARK*/
-		g_CRTC_MMP_Events[i].gamma_ioctl = mmprofile_register_event(
-			crtc_mmp_root, "gamma_ioctl");
-		g_CRTC_MMP_Events[i].gamma_sof = mmprofile_register_event(
-			crtc_mmp_root, "gamma_sof");
+		g_CRTC_MMP_Events[i].max_hrt_layers = mmprofile_register_event(
+			crtc_mmp_root, "max_hrt_layers");
 	}
 }
 void drm_mmp_init(void)

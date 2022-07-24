@@ -190,7 +190,7 @@ const char * const *get_mt6833_all_clk_names(void)
 		"ifrao_ccif4_md",
 		"ifrao_spi6_ck",
 		"ifrao_spi7_ck",
-		"ifrao_66mp_mclk_p",
+		"p",
 		"ifrao_infra_133m",
 		"ifrao_infra_66m",
 		"ifrao_peru_bus_133m",
@@ -447,17 +447,5 @@ static struct platform_driver clk_dbg_mt6833_drv = {
  * init functions
  */
 
-static int __init clkdbg_mt6833_init(void)
-{
-	pr_notice("%s start\n", __func__);
-	return clk_dbg_driver_register(&clk_dbg_mt6833_drv, "clk-dbg-mt6833");
-}
-
-static void __exit clkdbg_mt6833_exit(void)
-{
-	platform_driver_unregister(&clk_dbg_mt6833_drv);
-}
-
-subsys_initcall(clkdbg_mt6833_init);
-module_exit(clkdbg_mt6833_exit);
+module_platform_driver(clk_dbg_mt6833_drv);
 MODULE_LICENSE("GPL");

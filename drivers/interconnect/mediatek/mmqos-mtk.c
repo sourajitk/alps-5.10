@@ -148,10 +148,6 @@ s32 mtk_mmqos_system_qos_update(unsigned short qos_status)
 {
 	struct mtk_mmqos *mmqos = gmmqos;
 
-	if (IS_ERR_OR_NULL(mmqos)) {
-		pr_notice("%s is not ready\n", __func__);
-		return 0;
-	}
 	mmqos->qos_bound = (qos_status > QOS_BOUND_BW_FREE);
 	mmqos_update_setting(mmqos);
 
@@ -193,12 +189,10 @@ static void set_comm_icc_bw(struct common_node *comm_node)
 	list_for_each_entry(comm_port_node, &comm_node->comm_port_list, list) {
 		mutex_lock(&comm_port_node->bw_lock);
 		avg_bw += comm_port_node->latest_avg_bw;
-		if (comm_port_node->hrt_type < HRT_TYPE_NUM) {
-			normalize_peak_bw = MULTIPLY_RATIO(comm_port_node->latest_peak_bw)
+		normalize_peak_bw = MULTIPLY_RATIO(comm_port_node->latest_peak_bw)
 						/ mtk_mmqos_get_hrt_ratio(
 						comm_port_node->hrt_type);
-			peak_bw += normalize_peak_bw;
-		}
+		peak_bw += normalize_peak_bw;
 		mutex_unlock(&comm_port_node->bw_lock);
 	}
 
@@ -312,11 +306,14 @@ static int mtk_mmqos_set(struct icc_node *src, struct icc_node *dst)
 				larb_node->old_peak_bw = src->peak_bw;
 				larb_node->old_avg_bw = src->avg_bw;
 			} else {
-				if (comm_port_node->hrt_type == HRT_DISP
-					&& gmmqos->dual_pipe_enable) {
+				if (comm_port_node->hrt_type == HRT_DISP) {
+					//&& gmmqos->dual_pipe_enable) {
 					chn_hrt_r_bw[comm_id][chnn_id] -= larb_node->old_peak_bw;
 					chn_hrt_r_bw[comm_id][chnn_id] += (src->peak_bw / 2);
 					larb_node->old_peak_bw = (src->peak_bw / 2);
+					if (log_level & 1 << log_bw)
+						pr_notice("%s disp comm_port_node dual_en=%d\n",
+						__func__, gmmqos->dual_pipe_enable);
 				} else {
 					chn_hrt_r_bw[comm_id][chnn_id] -= larb_node->old_peak_bw;
 					chn_hrt_r_bw[comm_id][chnn_id] += src->peak_bw;
@@ -373,15 +370,12 @@ static int mtk_mmqos_set(struct icc_node *src, struct icc_node *dst)
 			}
 		}
 
-		if (larb_port_node->base->mix_bw) {
+		if (larb_port_node->base->mix_bw)
 			value = SHIFT_ROUND(
 				icc_to_MBps(larb_port_node->base->mix_bw),
 				larb_port_node->bw_ratio);
-			if (src->peak_bw)
-				value = SHIFT_ROUND(value * 3, 1);
-		} else {
+		else
 			larb_port_node->is_max_ostd = false;
-		}
 		if (value > mmqos->max_ratio || larb_port_node->is_max_ostd)
 			value = mmqos->max_ratio;
 		if (mmqos_state & OSTD_ENABLE)
@@ -397,11 +391,12 @@ static int mtk_mmqos_set(struct icc_node *src, struct icc_node *dst)
 		}
 		if (log_level & 1 << log_bw)
 			dev_notice(larb_node->larb_dev,
-				"larb=%d port=%d avg_bw:%d peak_bw:%d ostd=%#x\n",
+				"larb=%d port=%d avg:%d peak:%d ostd=%#x du_en=%d du_id=%d\n",
 				MTK_M4U_TO_LARB(src->id), MTK_M4U_TO_PORT(src->id),
 				icc_to_MBps(larb_port_node->base->icc_node->avg_bw),
 				icc_to_MBps(larb_port_node->base->icc_node->peak_bw),
-				value);
+				value, gmmqos->dual_pipe_enable, larb_node->dual_pipe_id);
+
 		//queue_work(mmqos->wq, &larb_node->work);
 		break;
 	default:
@@ -430,7 +425,7 @@ static int mtk_mmqos_aggregate(struct icc_node *node,
 				larb_port_node->is_max_ostd = true;
 				mix_bw = max_t(u32, avg_bw, 1000);
 			} else {
-				mix_bw = peak_bw;
+				mix_bw = SHIFT_ROUND(peak_bw * 3, 1);
 			}
 		}
 		break;

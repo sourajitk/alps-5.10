@@ -1715,7 +1715,7 @@ static int ppm_data_init(struct cluster_data *cluster)
 	policy = cpufreq_cpu_get(first_cpu);
 	if (!policy) {
 		pr_info("%s: cpufreq policy %d is not found for cpu#%d",
-				TAG, first_cpu);
+				TAG, first_cpu, first_cpu);
 		return -ENOMEM;
 	}
 
@@ -1731,8 +1731,7 @@ static int ppm_data_init(struct cluster_data *cluster)
 	}
 
 	pd = em_cpu_get(first_cpu);
-	if (!pd)
-		return -ENOMEM;
+
 	/* get power and capacity and calculate efficiency */
 
 	for (i = 0; i < opp_nr; i++) {

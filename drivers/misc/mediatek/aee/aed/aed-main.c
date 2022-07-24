@@ -170,14 +170,6 @@ int aee_get_mode(void)
 }
 EXPORT_SYMBOL(aee_get_mode);
 
-typedef int (*func_t)(void);
-func_t aed_set_func;
-
-void aed_set_extra_func(int (*fn)(void))
-{
-	aed_set_func = fn;
-}
-EXPORT_SYMBOL(aed_set_extra_func);
 
 /******************************************************************************
  * CONSTANT DEFINITIONS
@@ -238,10 +230,9 @@ static struct aed_dev aed_dev;
 
 inline void msg_destroy(char **ppmsg)
 {
-	char *ppmsg_tmp = *ppmsg;
 	if (*ppmsg) {
+		vfree(*ppmsg);
 		*ppmsg = NULL;
-		vfree(ppmsg_tmp);
 	}
 }
 
@@ -1597,7 +1588,6 @@ static long aed_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	struct aee_thread_reg *tmp;
 	int pid;
 	struct aee_siginfo aee_si;
-	int notify_status = 0;
 
 	if (!arg && (cmd != AEEIOCTL_DAL_CLEAN)) {
 		pr_info("ERR: %s arg=NULL\n", __func__);
@@ -1607,15 +1597,6 @@ static long aed_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		return -ERESTARTSYS;
 
 	switch (cmd) {
-	case AEEIOCTL_SET_NOTIFY:
-		if (copy_from_user(&notify_status, (void __user *)arg,
-				sizeof(notify_status))) {
-			ret = -EFAULT;
-			goto EXIT;
-		}
-		if (notify_status && aed_set_func)
-			aed_set_func();
-		break;
 	case AEEIOCTL_SET_AEE_MODE:
 		if (strncmp(current->comm, "aee_aed", 7)) {
 			pr_info("unexpected user: %s", current->comm);

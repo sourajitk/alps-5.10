@@ -478,8 +478,7 @@ static void set_max_framerate_video(struct subdrv_ctx *ctx, UINT16 framerate,
 
 static kal_uint32 streaming_control(struct subdrv_ctx *ctx, kal_bool enable)
 {
-	LOG_INF("streaming_enable(0=Sw Standby,1=streaming): %d 0x%08x 0x%08x\n", enable,
-		read_cmos_sensor_8(ctx, 0x481B), read_cmos_sensor_8(ctx, 0x3812));
+	LOG_INF("streaming_enable(0=Sw Standby,1=streaming): %d\n", enable);
 	if (enable) {
 		write_cmos_sensor_8(ctx, 0x0100, 0X01);
 		ctx->is_streaming = KAL_TRUE;
@@ -2124,8 +2123,7 @@ static kal_uint32 get_default_framerate_by_scenario(struct subdrv_ctx *ctx,
 
 static kal_uint32 set_test_pattern_mode(struct subdrv_ctx *ctx, kal_uint32 modes)
 {
-	if (modes != ctx->test_pattern)
-		pr_debug("Test_Pattern modes: %d -> %d\n", ctx->test_pattern, modes);
+	DEBUG_LOG(ctx, "Test_Pattern modes: %d\n", modes);
 	memset(_i2c_data, 0x0, sizeof(_i2c_data));
 	_size_to_write = 0;
 	if (modes == 2) {
@@ -2136,8 +2134,8 @@ static kal_uint32 set_test_pattern_mode(struct subdrv_ctx *ctx, kal_uint32 modes
 		_i2c_data[_size_to_write++] = 0x5002;
 		_i2c_data[_size_to_write++] = 0x92;//10010010
 		/* need check with vendor */
-		_i2c_data[_size_to_write++] = 0x5081;
-		_i2c_data[_size_to_write++] = 0x01;
+		//_i2c_data[_size_to_write++] = 0x5081;
+		//_i2c_data[_size_to_write++] = 0x01;
 	} else if (modes == 5) { //black
 		//@@ Solid color BLACK - on
 		//6c 3019 f0; d2
@@ -2156,8 +2154,8 @@ static kal_uint32 set_test_pattern_mode(struct subdrv_ctx *ctx, kal_uint32 modes
 		_i2c_data[_size_to_write++] = 0x5002;
 		_i2c_data[_size_to_write++] = 0x9E;//10011110
 		/* need check with vendor */
-		_i2c_data[_size_to_write++] = 0x5081;
-		_i2c_data[_size_to_write++] = 0x0;
+		//_i2c_data[_size_to_write++] = 0x5081;
+		//_i2c_data[_size_to_write++] = 0x0;
 	} else if ((modes != 5) && (ctx->test_pattern == 5)) {
 		//@@ Solid color BLACK - off
 		//6c 3019 d2
@@ -2172,6 +2170,7 @@ static kal_uint32 set_test_pattern_mode(struct subdrv_ctx *ctx, kal_uint32 modes
 			_i2c_data,
 			_size_to_write);
 	}
+	DEBUG_LOG(ctx, "Test_Pattern modes: %d -> %d\n", ctx->test_pattern, modes);
 	ctx->test_pattern = modes;
 	return ERROR_NONE;
 }
@@ -3339,10 +3338,9 @@ static int get_csi_param(struct subdrv_ctx *ctx,
 	enum SENSOR_SCENARIO_ID_ENUM scenario_id,
 	struct mtk_csi_param *csi_param)
 {
-	csi_param->legacy_phy = 0;
-	csi_param->not_fixed_trail_settle = 0;
-	//csi_param->cphy_settle = 0x1b;
-	csi_param->cphy_settle = 98;
+	csi_param->legacy_phy = 1;
+	csi_param->not_fixed_trail_settle = 1;
+	csi_param->cphy_settle = 0x12;
 	return 0;
 }
 

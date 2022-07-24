@@ -58,8 +58,6 @@ static unsigned int gpueb_enable;
 struct kobject *ssc_kobj;
 EXPORT_SYMBOL_GPL(ssc_kobj);
 
-static unsigned int ssc_disable;
-
 static BLOCKING_NOTIFIER_HEAD(vlogic_bound_chain);
 static struct regulator *ssc_vcore_voter;
 
@@ -353,16 +351,6 @@ static int __init ssc_init(void)
 		if (ret)
 			safe_vlogic_uV = 0xFFFFFFFF;
 
-		ret = of_property_read_u32(ssc_node,
-				"ssc_disable",
-				&ssc_disable);
-
-		if (!ret && ssc_disable == 1) {
-			spin_unlock_irqrestore(&ssc_locker, flags);
-			pr_info("[SSC] disabled\n");
-			return 0;
-		}
-
 		of_node_put(ssc_node);
 	}
 
@@ -429,8 +417,6 @@ SKIP_SCMI:
 }
 static void __exit ssc_deinit(void)
 {
-	if (ssc_disable == 1)
-		return;
 
 #ifdef SSC_SYSFS_VLOGIC_BOUND_SUPPORT
 	sysfs_remove_file(ssc_kobj, __ATTR_OF(vlogic_bound));

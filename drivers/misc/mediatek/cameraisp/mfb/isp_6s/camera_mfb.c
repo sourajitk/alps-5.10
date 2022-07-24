@@ -266,7 +266,7 @@ static u64 *speeds;
 
 static spinlock_t SpinLockMfbPmqos;
 static unsigned int qos_scen[4];
-static unsigned int qos_total, qos_report;
+static unsigned int qos_total;
 
 #define MFB_PORT_NUM 8
 static struct icc_path *path_mfb[MFB_PORT_NUM];
@@ -798,13 +798,8 @@ void MFBQOS_Update(bool start, unsigned int scen, unsigned long bw)
 	if (ret)
 		LOG_ERR("PMQOS error ret = %d", ret);
 
-	if (qos_total > 2000000000)
-		qos_report = 2000000000;
-	else
-		qos_report = qos_total;
-
 	for (i = 0; i < MFB_PORT_NUM; i++)
-		mtk_icc_set_bw(path_mfb[i], Bps_to_icc(qos_report), 0);
+		mtk_icc_set_bw(path_mfb[i], Bps_to_icc(qos_total), 0);
 }
 #endif
 
@@ -940,7 +935,7 @@ static void mss_pkt_tcmds(struct cmdq_pkt *handle,
 					pMssConfig->MSSDMT_TDRI_BASE[t]);
 	}
 	LOG_DBG("%s: tpipe_used is %d", __func__, pMssConfig->tpipe_used);
-	LOG_DBG("mss cmdq write done %d", pMssConfig->tpipe_used);
+	LOG_INF("mss cmdq write done %d", pMssConfig->tpipe_used);
 #endif
 }
 
@@ -1689,10 +1684,6 @@ static inline void MFB_Prepare_Enable_ccf_clock(void)
 	ret = clk_prepare_enable(mfb_clk.CG_MFB_IMG_4);
 	if (ret)
 		LOG_ERR("cannot prepare and enable CG_MFB_IMG_4 clock\n");
-
-	// cmdq enable
-	cmdq_mbox_enable(mss_clt->chan);
-	cmdq_mbox_enable(msf_clt->chan);
 }
 
 static inline void MFB_Disable_Unprepare_ccf_clock(void)
@@ -1700,11 +1691,6 @@ static inline void MFB_Disable_Unprepare_ccf_clock(void)
 	/* must keep this clk close order:
 	 * MFB clk -> CG_SCP_SYS_ISP -> CG_MM_SMI_COMMON -> CG_SCP_SYS_DIS
 	 */
-
-	// cmdq disable
-	cmdq_mbox_disable(msf_clt->chan);
-	cmdq_mbox_disable(mss_clt->chan);
-
 	if (mfb_clk.CG_MFB_IMG_4 != NULL)
 		clk_disable_unprepare(mfb_clk.CG_MFB_IMG_4);
 	if (mfb_clk.CG_MFB_IMG_3 != NULL)
@@ -3774,7 +3760,6 @@ static signed int MFB_open(struct inode *pInode, struct file *pFile)
 
 #ifdef MFB_PMQOS
 		qos_total = 0;
-		qos_report = 0;
 		for (i = 0; i < 4; i++)
 			qos_scen[i] = 0;
 #endif

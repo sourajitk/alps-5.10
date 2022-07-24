@@ -214,7 +214,6 @@ struct mtk_cam_sensor_work {
  * @mtk_cam_exposure: exposure value of sensor of mstream
  * @deque_list_node: the entry node of s_data for deque
  * @cleanup_list_node: the entry node of s_data for cleanup
- * @req_id: request sequence id from userspace for mstream exposure
  *
  */
 struct mtk_cam_request_stream_data {
@@ -261,7 +260,6 @@ struct mtk_cam_request_stream_data {
 	struct list_head deque_list_node;
 	struct list_head cleanup_list_node;
 	atomic_t first_setting_check;
-	int req_id;
 };
 
 struct mtk_cam_req_pipe {
@@ -296,7 +294,6 @@ struct mtk_cam_frame_sync {
 
 struct mtk_cam_req_raw_pipe_data {
 	struct mtk_cam_resource res;
-	struct mtk_cam_resource_config res_config;
 	struct mtk_raw_stagger_select stagger_select;
 	int enabled_raw;
 };
@@ -454,21 +451,19 @@ struct mtk_cam_ctx {
 
 	spinlock_t streaming_lock;
 	spinlock_t first_cq_lock;
+	struct mutex cleanup_lock;
 
 	struct mtk_cam_hsf_ctrl *hsf;
 	atomic_t watchdog_timeout_cnt;
 	atomic_t watchdog_cnt;
 	atomic_t watchdog_dumped;
 	atomic_t watchdog_dump_cnt;
-	u64 watchdog_time_diff_ns;
 	struct timer_list watchdog_timer;
 	struct work_struct watchdog_work;
 
 	/* To support debug dump */
 	struct mtkcam_ipi_config_param config_params;
-	bool ext_isp_meta_off;
-	bool ext_isp_pureraw_off;
-	bool ext_isp_procraw_off;
+
 };
 
 struct mtk_cam_device {
@@ -483,6 +478,11 @@ struct mtk_cam_device {
 	//struct platform_device *scp_pdev; /* only for scp case? */
 	phandle rproc_phandle;
 	struct rproc *rproc_handle;
+
+	#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	phandle rproc_ccu_phandle;
+	struct rproc *rproc_ccu_handle;
+	#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 
 	struct workqueue_struct *link_change_wq;
 	unsigned int composer_cnt;
@@ -892,7 +892,6 @@ mtk_cam_get_req_s_data(struct mtk_cam_ctx *ctx,
 		       unsigned int pipe_id, unsigned int frame_seq_no);
 struct mtk_raw_pipeline *mtk_cam_dev_get_raw_pipeline(struct mtk_cam_device *cam,
 						      unsigned int id);
-bool finish_img_buf(struct mtk_cam_request_stream_data *req_stream_data);
 
 int get_main_sv_pipe_id(struct mtk_cam_device *cam, int used_dev_mask);
 int get_sub_sv_pipe_id(struct mtk_cam_device *cam, int used_dev_mask);
@@ -904,7 +903,6 @@ struct mtk_raw_device *get_slave_raw_dev(struct mtk_cam_device *cam,
 					 struct mtk_raw_pipeline *pipe);
 struct mtk_raw_device *get_slave2_raw_dev(struct mtk_cam_device *cam,
 					  struct mtk_raw_pipeline *pipe);
-struct mtk_yuv_device *get_yuv_dev(struct mtk_raw_device *raw_dev);
 struct mtk_camsv_device *get_camsv_dev(struct mtk_cam_device *cam,
 					struct mtk_camsv_pipeline *pipe);
 struct mtk_mraw_device *get_mraw_dev(struct mtk_cam_device *cam,

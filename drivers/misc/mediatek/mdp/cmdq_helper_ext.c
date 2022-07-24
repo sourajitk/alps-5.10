@@ -75,6 +75,7 @@ static struct cmdq_base *cmdq_client_base;
 struct device *mbox_dev;
 
 static atomic_t cmdq_thread_usage;
+static atomic_t cmdq_thread_usage_clk;
 static wait_queue_head_t *cmdq_wait_queue; /* task done notify */
 static struct DumpCommandBufferStruct cmdq_command_dump;
 
@@ -3227,6 +3228,18 @@ static void cmdq_core_clk_enable(struct cmdqRecStruct *handle)
 	if (clock_count == 1)
 		mdp_lock_wake_lock(true);
 
+	if (!handle->secData.is_secure) {
+		s32 clk_cnt = atomic_inc_return(&cmdq_thread_usage_clk);
+
+		if (clk_cnt == 1)
+			cmdq_mbox_enable(((struct cmdq_client *)
+				handle->pkt->cl)->chan);
+	}
+#ifdef CMDQ_SECURE_PATH_SUPPORT
+		else {
+			cmdq_sec_mbox_enable(((struct cmdq_client *)
+				handle->pkt->cl)->chan);
+#endif
 	cmdq_mdp_reset_resource();
 
 	cmdq_core_group_clk_cb(true, handle->engineFlag, handle->engine_clk);
@@ -3238,6 +3251,21 @@ static void cmdq_core_clk_disable(struct cmdqRecStruct *handle)
 
 	cmdq_core_group_clk_cb(false, handle->engineFlag, handle->engine_clk);
 
+	if (!handle->secData.is_secure) {
+		s32 clk_cnt = atomic_dec_return(&cmdq_thread_usage_clk);
+
+		if (clk_cnt == 0)
+			cmdq_mbox_disable(((struct cmdq_client *)
+				handle->pkt->cl)->chan);
+		else if (clk_cnt < 0)
+			CMDQ_ERR("disable clock %s error usage:%d\n",
+				__func__, clk_cnt);
+	}
+#ifdef CMDQ_SECURE_PATH_SUPPORT
+	else
+		cmdq_sec_mbox_disable(((struct cmdq_client *)
+			handle->pkt->cl)->chan);
+#endif
 	clock_count = atomic_dec_return(&cmdq_thread_usage);
 
 	CMDQ_MSG("[CLOCK]disable usage:%d\n", clock_count);
@@ -4575,7 +4603,7 @@ s32 cmdq_helper_mbox_register(struct device *dev)
 		}
 
 		cmdq_clients[chan_id] = clt;
-		CMDQ_LOG("chan_id %d 0x%p dev:0x%p\n",
+		CMDQ_LOG("chan %d 0x%p dev:0x%p\n",
 			chan_id, cmdq_clients[chan_id]->chan, dev);
 
 		if (!cmdq_entry && chan_id >= CMDQ_DYNAMIC_THREAD_ID_START)
@@ -4656,7 +4684,8 @@ void cmdq_core_initialize(void)
 		if (!cmdq_clients[index])
 			cmdq_ctx.thread[index].used = true;
 
-#ifdef CMDQ_SECURE_PATH_SUPPORT
+#if defined(CONFIG_MTK_SEC_VIDEO_PATH_SUPPORT) || \
+	defined(CONFIG_MTK_CAM_SECURITY_SUPPORT)
 	/* for secure path reserve irq notify thread */
 	cmdq_ctx.thread[CMDQ_SEC_IRQ_THREAD].used = true;
 #endif

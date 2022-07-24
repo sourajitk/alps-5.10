@@ -7,10 +7,6 @@ KASAN_SANITIZE_slab_common.o := n
 KASAN_SANITIZE_slab.o := n
 KASAN_SANITIZE_slub.o := n
 KCSAN_SANITIZE_kmemleak.o := n
-ifdef CONFIG_MTK_KASAN_MEMBLOCK_SKIP
-KASAN_SANITIZE_memblock.o := n
-endif
-
 
 # These produce frequent data race reports: most of them are due to races on
 # the same word but accesses to different bits of that word. Re-enable KCSAN
@@ -128,3 +124,6 @@ obj-$(CONFIG_MEMFD_CREATE) += memfd.o
 obj-$(CONFIG_MAPPING_DIRTY_HELPERS) += mapping_dirty_helpers.o
 obj-$(CONFIG_PTDUMP_CORE) += ptdump.o
 obj-$(CONFIG_PAGE_REPORTING) += page_reporting.o
+#ifdef OPLUS_FEATURE_PERFORMANCE_MM
+obj-$(CONFIG_OPLUS_FEATURE_PERFORMANCE_MM) += oplus_perf_mm/
+#endif /* OPLUS_FEATURE_PERFORMANCE_MM */

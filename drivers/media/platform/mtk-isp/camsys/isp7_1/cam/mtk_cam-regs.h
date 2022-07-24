@@ -14,13 +14,9 @@
 #define TG_INT2_ST						(1L << 2)
 #define EXPDON_ST						(1L << 5)
 #define SOF_INT_ST						(1L << 8)
-#define TG_VS_INT_ORG_ST				(1L << 11)
 #define HW_PASS1_DON_ST					(1L << 20)
 #define SW_PASS1_DON_ST					(1L << 22)
-#define DCIF_SUB_SOF_INT_EN				(1L << 24)
-#define DCIF_SOF_INT_EN					(1L << 25)
-#define P1_DONE_OVER_SOF_INT_ST			(1L << 28)
-#define P1_SKIP_FRAME_INT_ST			(1L << 29)
+#define TG_VS_INT_ORG_ST				(1L << 11)
 
 /* YUV siganl */
 #define YUV_SW_PASS1_DON_ST				(1L << 0)
@@ -30,14 +26,10 @@
 /* err status */
 #define TG_OVRUN_ST						(1L << 6)
 #define TG_GBERR_ST						(1L << 7)
-#define SOF_DROP_ST						(1L << 10)
 #define CQ_DB_LOAD_ERR_ST				(1L << 12)
 #define CQ_MAIN_CODE_ERR_ST				(1L << 14)
 #define CQ_MAIN_VS_ERR_ST				(1L << 15)
 #define CQ_MAIN_TRIG_DLY_ST				(1L << 16)
-#define CQ_SUB_CODE_ERR_ST				(1L << 17)
-#define CQ_SUB_VS_ERR_ST				(1L << 18)
-#define CQ_SUB_TRIG_DLY_ST				(1L << 18)
 #define LSCI_ERR_ST						(1L << 24)
 #define DMA_ERR_ST						(1L << 26)
 
@@ -66,25 +58,10 @@
 /* IRQ Error Mask */
 #define INT_ST_MASK_CAM_ERR (TG_OVRUN_ST	 |\
 							TG_GBERR_ST	 |\
-							SOF_DROP_ST |\
 							CQ_DB_LOAD_ERR_ST	 |\
 							CQ_MAIN_CODE_ERR_ST |\
 							CQ_MAIN_VS_ERR_ST	 |\
-							CQ_MAIN_TRIG_DLY_ST |\
-							CQ_SUB_CODE_ERR_ST |\
-							CQ_SUB_VS_ERR_ST	 |\
-							CQ_SUB_TRIG_DLY_ST |\
 							DMA_ERR_ST)
-
-/* IRQ Debug Mask */
-#define INT_ST_MASK_CAM_DBG (SOF_DROP_ST |\
-							CQ_DB_LOAD_ERR_ST	 |\
-							CQ_MAIN_CODE_ERR_ST |\
-							CQ_MAIN_VS_ERR_ST	 |\
-							CQ_MAIN_TRIG_DLY_ST |\
-							CQ_SUB_CODE_ERR_ST |\
-							CQ_SUB_VS_ERR_ST	 |\
-							CQ_SUB_TRIG_DLY_ST)
 
 /* camsys */
 #define REG_CAMSYS_CG_CON				0x0000
@@ -98,10 +75,6 @@
 #define REG_HALT4_EN					0x035c
 #define REG_HALT5_EN					0x0360
 #define REG_HALT6_EN					0x0364
-#define REG_HALT7_EN					0x0368
-#define REG_HALT8_EN					0x036c
-#define REG_HALT9_EN					0x03b0
-#define REG_HALT10_EN					0x03b4
 
 #define REG_FLASH					0x03A0
 #define REG_ULTRA_HALT1_EN				0x03c0
@@ -110,28 +83,12 @@
 #define REG_ULTRA_HALT4_EN				0x03cc
 #define REG_ULTRA_HALT5_EN				0x03d0
 #define REG_ULTRA_HALT6_EN				0x03d4
-#define REG_ULTRA_HALT7_EN				0x03d8
-#define REG_ULTRA_HALT8_EN				0x03dc
-#define REG_ULTRA_HALT9_EN				0x03e0
-#define REG_ULTRA_HALT10_EN				0x03e4
-
 #define REG_PREULTRA_HALT1_EN			0x03f0
 #define REG_PREULTRA_HALT2_EN			0x03f4
 #define REG_PREULTRA_HALT3_EN			0x03f8
 #define REG_PREULTRA_HALT4_EN			0x03fc
 #define REG_PREULTRA_HALT5_EN			0x0400
 #define REG_PREULTRA_HALT6_EN			0x0404
-#define REG_PREULTRA_HALT7_EN			0x0408
-#define REG_PREULTRA_HALT8_EN			0x040c
-#define REG_PREULTRA_HALT9_EN			0x0410
-#define REG_PREULTRA_HALT10_EN			0x0414
-
-#define CAMSV_1_WDMA_PORT		0x3FF03C
-#define CAMSV_2_WDMA_PORT		0x3FF3F
-#define RAW_WDMA_PORT			0x1E001
-#define RAW_RDMA_PORT			0x1FFE
-#define YUV_WDMA_PORT			0x7F
-#define YUV_RDMA_PORT			0x0
 
 /* Status check */
 #define REG_CTL_EN						0x0000
@@ -216,7 +173,6 @@
 #define SCQ_STAGGER_MODE					BIT(12)
 #define SCQ_SUBSAMPLE_EN					BIT(21)
 #define CQ_DB_EN							BIT(4)
-#define CQ_DROP_FRAME_EN					BIT(1)
 #define CQ_THR0_MODE_IMMEDIATE				BIT(4)
 #define CQ_THR0_MODE_CONTINUOUS				BIT(5)
 #define CQ_THR0_EN							BIT(0)

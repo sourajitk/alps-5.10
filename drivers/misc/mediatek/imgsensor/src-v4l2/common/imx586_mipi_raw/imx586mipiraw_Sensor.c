@@ -60,7 +60,6 @@ static bool _is_seamless;
 #define imx586_table_write_cmos_sensor(...) subdrv_i2c_wr_regs_u8(__VA_ARGS__)
 #define LOG_INF(format, args...) pr_info(PFX "[%s] " format, __func__, ##args)
 
-#undef VENDOR_EDIT
 
 #define USE_BURST_MODE 1
 
@@ -577,7 +576,7 @@ static void set_max_framerate(struct subdrv_ctx *ctx,
 	/*kal_int16 dummy_line;*/
 	kal_uint32 frame_length = ctx->frame_length;
 
-	DEBUG_LOG(ctx,
+	pr_debug(
 		"framerate = %d, min framelength should enable %d\n", framerate,
 		min_framelength_en);
 
@@ -611,7 +610,6 @@ static void write_shutter(struct subdrv_ctx *ctx, kal_uint32 shutter)
 {
 	kal_uint16 realtime_fps = 0;
 	#ifdef LONG_EXP
-	/*Yijun.Tan@camera.driver,20180116,add for slow shutter */
 	int longexposure_times = 0;
 	static int long_exposure_status;
 	#endif
@@ -649,7 +647,7 @@ static void write_shutter(struct subdrv_ctx *ctx, kal_uint32 shutter)
 		pr_debug("enter long exposure mode, time is %d",
 			longexposure_times);
 		long_exposure_status = 1;
-		//ctx->frame_length = shutter + 32;
+		ctx->frame_length = shutter + 32;
 		if (!_is_seamless)
 			set_cmos_sensor_8(ctx, 0x3100, longexposure_times & 0x07);
 		else {
@@ -1001,23 +999,15 @@ static void imx586_set_lsc_reg_setting(struct subdrv_ctx *ctx,
 static kal_uint32 streaming_control(struct subdrv_ctx *ctx, kal_bool enable)
 {
 	pr_debug(
-		"%s streaming: %d x%08x|0x%08x|0x%08x|0x%08x|0x%08x|0x%08x|0x%08x|0x%08x|0x%08x|0x%08x|0x%08x\n",
+		"%s streaming: %d 0x0851=0x%x, 0x0853=0x%x,0x0855=0x%x,0x0859=0x%x\n",
 		__func__,
 		enable,
-		read_cmos_sensor_8(ctx, 0x0808),
-		read_cmos_sensor_8(ctx, 0x084E),
-		read_cmos_sensor_8(ctx, 0x084F),
-		read_cmos_sensor_8(ctx, 0x0850),
 		read_cmos_sensor_8(ctx, 0x0851),
-		read_cmos_sensor_8(ctx, 0x0852),
 		read_cmos_sensor_8(ctx, 0x0853),
-		read_cmos_sensor_8(ctx, 0x0854),
 		read_cmos_sensor_8(ctx, 0x0855),
-		read_cmos_sensor_8(ctx, 0x0858),
 		read_cmos_sensor_8(ctx, 0x0859));
 
 	if (enable) {
-		//test pattern reset
 		if (read_cmos_sensor_8(ctx, 0x0350) != 0x01) {
 			pr_debug("single cam scenario enable auto-extend");
 			write_cmos_sensor_8(ctx, 0x0350, 0x01);
@@ -1028,8 +1018,6 @@ static kal_uint32 streaming_control(struct subdrv_ctx *ctx, kal_bool enable)
 		ctx->is_streaming = true;
 	} else {
 		write_cmos_sensor_8(ctx, 0x0100, 0x00);
-		// write_cmos_sensor_8(ctx, 0x0808, 0x00);// set mipi timing back to auto
-
 		ctx->is_streaming = false;
 	}
 	return ERROR_NONE;
@@ -1573,13 +1561,13 @@ static kal_uint16 imx586_capture_setting[] = {
 	/*224 UI*/
 	0x0808, 0x02,
 	0x084E, 0x00,
-	0x084F, 0x17,
+	0x084F, 0x18,
 	0x0850, 0x00,
-	0x0851, 0x12,
+	0x0851, 0x13,
 	0x0852, 0x00,
 	0x0853, 0x25,
 	0x0854, 0x00,
-	0x0855, 0x14,
+	0x0855, 0x17,
 	0x0858, 0x00,
 	0x0859, 0x1F,
 
@@ -1784,19 +1772,6 @@ static kal_uint16 imx586_preview_setting[] = {
 	0x3E3B, 0x01,
 	0x4434, 0x01,
 	0x4435, 0xF0,
-	/*224 UI*/
-	0x0808, 0x02,
-	0x084E, 0x00,
-	0x084F, 0x12,
-	0x0850, 0x00,
-	0x0851, 0x0F,
-	0x0852, 0x00,
-	0x0853, 0x1E,
-	0x0854, 0x00,
-	0x0855, 0x14,
-	0x0858, 0x00,
-	0x0859, 0x1F,
-
 #endif
 };
 
@@ -1906,19 +1881,6 @@ static kal_uint16 imx586_normal_video_setting_4K60FPS[] = {
 	0x3E3B, 0x01,
 	0x4434, 0x01,
 	0x4435, 0xE0,
-	/*224 UI*/
-	0x0808, 0x02,
-	0x084E, 0x00,
-	0x084F, 0x0C,
-	0x0850, 0x00,
-	0x0851, 0x0A,
-	0x0852, 0x00,
-	0x0853, 0x14,
-	0x0854, 0x00,
-	0x0855, 0x14,
-	0x0858, 0x00,
-	0x0859, 0x1F,
-
 };
 
 static kal_uint16 imx586_normal_video_setting[] = {
@@ -2029,28 +1991,15 @@ static kal_uint16 imx586_normal_video_setting[] = {
 	/*224 UI*/
 	0x0808, 0x02,
 	0x084E, 0x00,
-	0x084F, 0x08,
+	0x084F, 0x18,
 	0x0850, 0x00,
-	0x0851, 0x07,
+	0x0851, 0x13,
 	0x0852, 0x00,
-	0x0853, 0x0E,
+	0x0853, 0x25,
 	0x0854, 0x00,
-	0x0855, 0x14,
+	0x0855, 0x17,
 	0x0858, 0x00,
 	0x0859, 0x1F,
-	/*224 UI*/
-	0x0808, 0x02,
-	0x084E, 0x00,
-	0x084F, 0x05,
-	0x0850, 0x00,
-	0x0851, 0x04,
-	0x0852, 0x00,
-	0x0853, 0x09,
-	0x0854, 0x00,
-	0x0855, 0x14,
-	0x0858, 0x00,
-	0x0859, 0x1F,
-
 };
 
 static kal_uint16 imx586_hs_video_setting[] = {
@@ -2158,19 +2107,6 @@ static kal_uint16 imx586_hs_video_setting[] = {
 	0x3E3B, 0x00,
 	0x4434, 0x00,
 	0x4435, 0xF8,
-	/*224 UI*/
-	0x0808, 0x02,
-	0x084E, 0x00,
-	0x084F, 0x08,
-	0x0850, 0x00,
-	0x0851, 0x07,
-	0x0852, 0x00,
-	0x0853, 0x0E,
-	0x0854, 0x00,
-	0x0855, 0x14,
-	0x0858, 0x00,
-	0x0859, 0x1F,
-
 };
 
 static kal_uint16 imx586_slim_video_setting[] = {
@@ -2278,19 +2214,6 @@ static kal_uint16 imx586_slim_video_setting[] = {
 	0x3E3B, 0x01,
 	0x4434, 0x01,
 	0x4435, 0xF0,
-	/*224 UI*/
-	0x0808, 0x02,
-	0x084E, 0x00,
-	0x084F, 0x08,
-	0x0850, 0x00,
-	0x0851, 0x07,
-	0x0852, 0x00,
-	0x0853, 0x0E,
-	0x0854, 0x00,
-	0x0855, 0x14,
-	0x0858, 0x00,
-	0x0859, 0x1F,
-
 };
 
 static kal_uint16 imx586_custom1_setting[] = {
@@ -2396,19 +2319,6 @@ static kal_uint16 imx586_custom1_setting[] = {
 	/*PDAF TYPE1 Setting*/
 	0x3E20, 0x01,
 	0x3E37, 0x00,
-	/*224 UI*/
-	0x0808, 0x02,
-	0x084E, 0x00,
-	0x084F, 0x17,
-	0x0850, 0x00,
-	0x0851, 0x12,
-	0x0852, 0x00,
-	0x0853, 0x25,
-	0x0854, 0x00,
-	0x0855, 0x14,
-	0x0858, 0x00,
-	0x0859, 0x1F,
-
 };
 
 static kal_uint16 imx586_custom4_setting[] = {
@@ -2516,19 +2426,6 @@ static kal_uint16 imx586_custom4_setting[] = {
 	0x3E3B, 0x01,
 	0x4434, 0x01,
 	0x4435, 0x00,
-	/*224 UI*/
-	0x0808, 0x02,
-	0x084E, 0x00,
-	0x084F, 0x17,
-	0x0850, 0x00,
-	0x0851, 0x12,
-	0x0852, 0x00,
-	0x0853, 0x25,
-	0x0854, 0x00,
-	0x0855, 0x14,
-	0x0858, 0x00,
-	0x0859, 0x1F,
-
 };
 
 static kal_uint16 imx586_custom3_setting[] = {
@@ -2636,19 +2533,6 @@ static kal_uint16 imx586_custom3_setting[] = {
 	0x3E3B, 0x01,
 	0x4434, 0x01,
 	0x4435, 0xf0,
-	/*224 UI*/
-	0x0808, 0x02,
-	0x084E, 0x00,
-	0x084F, 0x17,
-	0x0850, 0x00,
-	0x0851, 0x12,
-	0x0852, 0x00,
-	0x0853, 0x25,
-	0x0854, 0x00,
-	0x0855, 0x14,
-	0x0858, 0x00,
-	0x0859, 0x1F,
-
 };
 
 static kal_uint16 imx586_custom5_setting[] = {
@@ -2755,20 +2639,7 @@ static kal_uint16 imx586_custom5_setting[] = {
 	0x3E20, 0x01,
 	0x3E3B, 0x00,
 	0x4434, 0x00,
-	0x4435, 0xF8,
-	/*224 UI*/
-	0x0808, 0x02,
-	0x084E, 0x00,
-	0x084F, 0x0C,
-	0x0850, 0x00,
-	0x0851, 0x0A,
-	0x0852, 0x00,
-	0x0853, 0x14,
-	0x0854, 0x00,
-	0x0855, 0x14,
-	0x0858, 0x00,
-	0x0859, 0x1F,
-
+	0x4435, 0xF8
 };
 
 static kal_uint16 imx586_custom6_setting[] = {
@@ -2876,19 +2747,6 @@ static kal_uint16 imx586_custom6_setting[] = {
 	0x3E3B, 0x01,
 	0x4434, 0x01,
 	0x4435, 0xE0,
-	/*224 UI*/
-	0x0808, 0x02,
-	0x084E, 0x00,
-	0x084F, 0x17,
-	0x0850, 0x00,
-	0x0851, 0x12,
-	0x0852, 0x00,
-	0x0853, 0x25,
-	0x0854, 0x00,
-	0x0855, 0x14,
-	0x0858, 0x00,
-	0x0859, 0x1F,
-
 };
 static void sensor_init(struct subdrv_ctx *ctx)
 {
@@ -2995,8 +2853,6 @@ static void sensor_init(struct subdrv_ctx *ctx)
 	#endif
 	/*enable temperature sensor, TEMP_SEN_CTL:*/
 	write_cmos_sensor_8(ctx, 0x0138, 0x01);
-	/* set MIPI auto ctrl */
-	write_cmos_sensor(ctx, 0x0808, 0x00);
 
 	set_mirror_flip(ctx, ctx->mirror);
 	pr_debug("[%s] End\n", __func__);
@@ -3510,6 +3366,8 @@ static void custom3_setting(struct subdrv_ctx *ctx)
 
 	LOG_INF("%s full size 30 fps E!\n", __func__);
 	/*************MIPI output setting************/
+	imx586_table_write_cmos_sensor(ctx, imx586_custom3_setting,
+		sizeof(imx586_custom3_setting)/sizeof(kal_uint16));
 
 	if (!_is_seamless)
 		imx586_table_write_cmos_sensor(ctx, imx586_custom3_setting, _length);
@@ -4429,11 +4287,10 @@ static kal_uint32 set_auto_flicker_mode(struct subdrv_ctx *ctx,
 {
 	if (enable) /*enable auto flicker*/ {
 		ctx->autoflicker_en = KAL_TRUE;
-		pr_debug("enable: %u fps = %d", (UINT32)enable, framerate);
+		pr_debug("enable! fps = %d", framerate);
 	} else {
 		 /*Cancel Auto flick*/
 		ctx->autoflicker_en = KAL_FALSE;
-		pr_debug("enable: %u fps = %d", (UINT32)enable, framerate);
 	}
 
 	return ERROR_NONE;
@@ -4690,21 +4547,13 @@ static kal_uint32 get_default_framerate_by_scenario(struct subdrv_ctx *ctx,
 
 static kal_uint32 set_test_pattern_mode(struct subdrv_ctx *ctx, kal_uint32 mode)
 {
-	if (mode != ctx->test_pattern)
-		pr_debug("test_pattern mode: %d\n", mode);
-	/*Clear data if not solid color*/
-	if (mode != 1) {
-		memset(_i2c_data, 0x0, sizeof(_i2c_data));
-		_size_to_write = 0;
-	}
-	if (_size_to_write == 0)
-		set_cmos_sensor_8(ctx, 0x0104, 0x01);
+	DEBUG_LOG(ctx, "mode: %d\n", mode);
+
 	if (mode)
-		set_cmos_sensor_8(ctx, 0x0601, mode); /*100% Color bar*/
+		write_cmos_sensor_8(ctx, 0x0601, mode); /*100% Color bar*/
 	else if (ctx->test_pattern)
-		set_cmos_sensor_8(ctx, 0x0601, 0x00); /*No pattern*/
-	set_cmos_sensor_8(ctx, 0x0104, 0x00);
-	commit_write_sensor(ctx);
+		write_cmos_sensor_8(ctx, 0x0601, 0x0000); /*No pattern*/
+
 	ctx->test_pattern = mode;
 	return ERROR_NONE;
 }
@@ -4712,10 +4561,10 @@ static kal_uint32 set_test_pattern_mode(struct subdrv_ctx *ctx, kal_uint32 mode)
 static kal_uint32 set_test_pattern_data(struct subdrv_ctx *ctx, struct mtk_test_pattern_data *data)
 {
 
-	DEBUG_LOG(ctx, "test_patterndata R = %x, Gr = %x,Gb = %x,B = %x\n",
+	pr_debug("test_patterndata R = %x, Gr = %x,Gb = %x,B = %x\n",
 		data->Channel_R >> 22, data->Channel_Gr >> 22,
 		data->Channel_Gb >> 22, data->Channel_B >> 22);
-	set_cmos_sensor_8(ctx, 0x0104, 0x01);
+
 	set_cmos_sensor_8(ctx, 0x0602, (data->Channel_R >> 30) & 0x3);
 	set_cmos_sensor_8(ctx, 0x0603, (data->Channel_R >> 22) & 0xff);
 	set_cmos_sensor_8(ctx, 0x0604, (data->Channel_Gr >> 30) & 0x3);
@@ -4724,7 +4573,7 @@ static kal_uint32 set_test_pattern_data(struct subdrv_ctx *ctx, struct mtk_test_
 	set_cmos_sensor_8(ctx, 0x0607, (data->Channel_B >> 22) & 0xff);
 	set_cmos_sensor_8(ctx, 0x0608, (data->Channel_Gb >> 30) & 0x3);
 	set_cmos_sensor_8(ctx, 0x0609, (data->Channel_Gb >> 22) & 0xff);
-	//commit_write_sensor(ctx);
+	commit_write_sensor(ctx);
 	return ERROR_NONE;
 }
 
@@ -4989,11 +4838,6 @@ static int feature_control(
 	case SENSOR_FEATURE_SET_NIGHTMODE:
 		 /* night_mode((BOOL) *feature_data); */
 		break;
-	#ifdef VENDOR_EDIT
-	case SENSOR_FEATURE_CHECK_MODULE_ID:
-		*feature_return_para_32 = imgsensor_info.module_id;
-		break;
-	#endif
 	case SENSOR_FEATURE_SET_GAIN:
 		set_gain(ctx, (UINT32) * feature_data);
 		break;
@@ -5630,26 +5474,6 @@ static struct mtk_mbus_frame_desc_entry frame_desc_vid[] = {
 	},
 };
 
-static struct mtk_mbus_frame_desc_entry frame_desc_hs_vid[] = {
-	{
-		.bus.csi2 = {
-			.channel = 0,
-			.data_type = 0x2b,
-			.hsize = 0x0780,
-			.vsize = 0x0438,
-		},
-	},
-	{
-		.bus.csi2 = {
-			.channel = 0,
-			.data_type = 0x34,
-			.hsize = 0x0000,
-			.vsize = 0x0000,
-			.user_data_desc = VC_PDAF_STATS,
-		},
-	},
-};
-
 static struct mtk_mbus_frame_desc_entry frame_desc_slim_vid[] = {
 	{
 		.bus.csi2 = {
@@ -5669,7 +5493,6 @@ static struct mtk_mbus_frame_desc_entry frame_desc_slim_vid[] = {
 		},
 	},
 };
-
 static struct mtk_mbus_frame_desc_entry frame_desc_cust1[] = { //type1 need be checked
 	{
 		.bus.csi2 = {
@@ -5727,7 +5550,6 @@ static struct mtk_mbus_frame_desc_entry frame_desc_cust3[] = {
 		},
 	},
 };
-
 static struct mtk_mbus_frame_desc_entry frame_desc_cust4[] = {
 	{
 		.bus.csi2 = {
@@ -5744,17 +5566,6 @@ static struct mtk_mbus_frame_desc_entry frame_desc_cust4[] = {
 			.hsize = 0x0280,
 			.vsize = 0x02e0,
 			.user_data_desc = VC_PDAF_STATS,
-		},
-	},
-};
-
-static struct mtk_mbus_frame_desc_entry frame_desc_cust5[] = {
-	{
-		.bus.csi2 = {
-			.channel = 0,
-			.data_type = 0x2b,
-			.hsize = 0x0280,
-			.vsize = 0x01e0,
 		},
 	},
 };
@@ -5803,11 +5614,6 @@ static int get_frame_desc(struct subdrv_ctx *ctx,
 		fd->num_entries = ARRAY_SIZE(frame_desc_vid);
 		memcpy(fd->entry, frame_desc_vid, sizeof(frame_desc_vid));
 		break;
-	case SENSOR_SCENARIO_ID_HIGHSPEED_VIDEO:
-		fd->type = MTK_MBUS_FRAME_DESC_TYPE_CSI2;
-		fd->num_entries = ARRAY_SIZE(frame_desc_hs_vid);
-		memcpy(fd->entry, frame_desc_hs_vid, sizeof(frame_desc_hs_vid));
-		break;
 	case SENSOR_SCENARIO_ID_SLIM_VIDEO:
 		fd->type = MTK_MBUS_FRAME_DESC_TYPE_CSI2;
 		fd->num_entries = ARRAY_SIZE(frame_desc_slim_vid);
@@ -5832,11 +5638,6 @@ static int get_frame_desc(struct subdrv_ctx *ctx,
 		fd->type = MTK_MBUS_FRAME_DESC_TYPE_CSI2;
 		fd->num_entries = ARRAY_SIZE(frame_desc_cust4);
 		memcpy(fd->entry, frame_desc_cust4, sizeof(frame_desc_cust4));
-		break;
-	case SENSOR_SCENARIO_ID_CUSTOM5:
-		fd->type = MTK_MBUS_FRAME_DESC_TYPE_CSI2;
-		fd->num_entries = ARRAY_SIZE(frame_desc_cust5);
-		memcpy(fd->entry, frame_desc_cust5, sizeof(frame_desc_cust5));
 		break;
 	case SENSOR_SCENARIO_ID_CUSTOM6:
 		fd->type = MTK_MBUS_FRAME_DESC_TYPE_CSI2;
@@ -5897,35 +5698,15 @@ static int get_csi_param(struct subdrv_ctx *ctx,
 	enum SENSOR_SCENARIO_ID_ENUM scenario_id,
 	struct mtk_csi_param *csi_param)
 {
-	csi_param->legacy_phy = 0;
-	csi_param->not_fixed_trail_settle = 0;
+	csi_param->legacy_phy = 1;
+	csi_param->not_fixed_trail_settle = 1;
 
 	switch (scenario_id) {
 	case SENSOR_SCENARIO_ID_NORMAL_CAPTURE:
-	case SENSOR_SCENARIO_ID_CUSTOM3:
-	case SENSOR_SCENARIO_ID_CUSTOM4:
-	case SENSOR_SCENARIO_ID_CUSTOM6:
-		csi_param->cphy_settle = 69;//0x13;
-		break;
-	case SENSOR_SCENARIO_ID_CUSTOM1:
-	case SENSOR_SCENARIO_ID_CUSTOM2:
-		csi_param->cphy_settle = 73;// 0x14;
-		break;
 	case SENSOR_SCENARIO_ID_NORMAL_VIDEO:
-	case SENSOR_SCENARIO_ID_SLIM_VIDEO:
-		csi_param->cphy_settle = 76;//0x15;
-		break;
-	case SENSOR_SCENARIO_ID_HIGHSPEED_VIDEO:
-		csi_param->cphy_settle = 84;//0x17;
-		break;
-	case SENSOR_SCENARIO_ID_CUSTOM5:
-		csi_param->cphy_settle = 87;//0x18;
-		break;
-	case SENSOR_SCENARIO_ID_NORMAL_PREVIEW:
-		csi_param->cphy_settle = 91;// 0x19;
+		csi_param->legacy_phy = 0;
 		break;
 	default:
-		csi_param->legacy_phy = 1;
 		break;
 	}
 	return 0;
